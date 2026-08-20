@@ -20,6 +20,12 @@ def main(argv: list[str] | None = None) -> int:
 
     subparsers.add_parser("match", help="Score stored job postings against the stored CV.")
 
+    probe = subparsers.add_parser("probe", help="Investigate a site before writing a spider for it.")
+    probe.add_argument("url", help="Full target URL, including scheme, e.g. https://example.com/jobs")
+    probe.add_argument(
+        "--pages", type=int, default=3, help="Sample size: the target page plus this many extra same-domain links."
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest-cv":
@@ -32,6 +38,12 @@ def main(argv: list[str] | None = None) -> int:
         from cv_scrape.flow.match_jobs_to_cv import match_jobs_to_cv
 
         match_jobs_to_cv()
+        return 0
+
+    if args.command == "probe":
+        from cv_scrape.flow.probe_site import probe_site
+
+        probe_site(args.url, pages=args.pages)
         return 0
 
     return 1

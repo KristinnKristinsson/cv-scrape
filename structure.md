@@ -45,26 +45,44 @@ cv-scrape/
 │   │   ├── rate_limiter.py             [WAF]      # RateLimiterState: tokens, last_refill, per domain
 │   │   ├── header_rotation.py          [WAF]      # HeaderRotationState: pool + current index
 │   │   ├── session.py                  [WAF]      # SessionState: per-domain cookies/last-used headers
+│   │   ├── site_profile.py             [PROBE]    # SiteProfile: everything one probe run found about a domain
+│   │   ├── probe_sample.py             [PROBE]    # reified per-request result within a probe run
+│   │   ├── robots_evaluation.py        [PROBE]    # allowed/crawl-delay for a target path
+│   │   ├── framework_signals.py        [PROBE]    # generator/powered-by/server/marker hints
+│   │   ├── structured_data_findings.py [PROBE]    # JSON-LD/feed/sitemap/API hints
+│   │   ├── rate_limit_findings.py      [PROBE]    # 429/Retry-After signal, summarized
 │   │   └── store.py                               # SQLite connection factory + schema
 │   │
 │   ├── interaction/
 │   │   ├── receive_fetch_response.py   [WAF]      # raw bytes/headers/status → normalized envelope, or reject
+│   │   │                                          # first real caller: flow/probe_site.py [PROBE]
 │   │   ├── parse_job_posting_html.py              # validated envelope → JobPosting, or reject-tag
 │   │   └── parse_cv_document.py                   # user's CV file (pdf/docx/txt) → ParsedCv, or reject-tag
 │   │
 │   ├── logic/
 │   │   ├── score_match.py                         # ParsedCv + JobPosting in hand → MatchScore
 │   │   ├── classify_response.py        [WAF]       # envelope in hand → ok/challenge/blocked/unknown tag
+│   │   │                                           # implemented; first real caller: flow/probe_site.py [PROBE]
 │   │   ├── decide_retry_action.py      [WAF]       # PendingFetch + now → retry-now/wait/abandon tag
 │   │   ├── select_rate_limit_policy_for_domain.py [WAF]
-│   │   └── select_header_pool_for_domain.py       [WAF]
+│   │   ├── select_header_pool_for_domain.py       [WAF]
+│   │   ├── detect_waf_vendor.py         [PROBE]    # envelope in hand → known-vendor tag (signature matching)
+│   │   ├── detect_framework_signals.py  [PROBE]    # envelope in hand → FrameworkSignals
+│   │   ├── discover_structured_data.py  [PROBE]    # envelope body in hand → StructuredDataFindings
+│   │   ├── evaluate_robots_txt.py       [PROBE]    # robots.txt text + path in hand → RobotsEvaluation
+│   │   ├── compare_raw_vs_rendered.py   [PROBE]    # raw body + rendered body in hand → JS-requirement tag
+│   │   ├── extract_same_domain_links.py [PROBE]    # body in hand → a few same-domain URLs for the sample
+│   │   ├── detect_rate_limit_signal.py  [PROBE]    # one status+headers in hand → hit/Retry-After
+│   │   └── summarize_rate_limit_signals.py [PROBE] # a probe run's signals in hand → RateLimitFindings
 │   │
 │   ├── observation/
-│   │   ├── read_clock.py               [WAF]
+│   │   ├── read_clock.py               [WAF]       # implemented; first real caller: flow/probe_site.py [PROBE]
 │   │   ├── read_session_state.py       [WAF]       # read our own stored cookies, unchanged
 │   │   ├── read_stored_jobs.py
 │   │   ├── read_stored_cv.py
-│   │   └── read_pending_fetches.py     [WAF]
+│   │   ├── read_pending_fetches.py     [WAF]
+│   │   ├── fetch_page_raw.py            [PROBE]    # plain HTTP GET (httpx); "another system's answer"
+│   │   └── fetch_page_rendered.py       [PROBE]    # same URL via a real headless browser (playwright)
 │   │
 │   ├── effect/
 │   │   ├── save_job_posting.py                     # convergent upsert
@@ -73,17 +91,22 @@ cv-scrape/
 │   │   ├── consume_rate_limit_token.py [WAF]        # ATOMIC check-and-decrement (Atomicity rule)
 │   │   ├── rotate_header_selection.py  [WAF]        # ATOMIC get-next-and-advance own index
 │   │   ├── update_session_state.py     [WAF]        # store newly-received cookies
-│   │   └── enqueue_pending_fetch.py    [WAF]
+│   │   ├── enqueue_pending_fetch.py    [WAF]
+│   │   └── save_site_profile.py         [PROBE]     # convergent write of a SiteProfile + HTML snapshots to disk
 │   │
 │   ├── flow/
 │   │   ├── pipelines.py                            # Scrapy item pipeline: interaction → logic → effect
 │   │   ├── middlewares.py              [WAF]        # Scrapy downloader middleware, thin sequence over WAF stubs
 │   │   ├── retry_pending_fetches.py    [WAF]        # future: drain queue, route on decide_retry_action's tag
 │   │   ├── ingest_cv.py                             # CLI flow: file path → interaction → effect
-│   │   └── match_jobs_to_cv.py                      # CLI flow: observation×2 → logic → effect
+│   │   ├── match_jobs_to_cv.py                      # CLI flow: observation×2 → logic → effect
+│   │   └── probe_site.py                [PROBE]     # CLI flow: `cv_scrape probe <url>` — see below
 │   │
 │   └── spiders/
 │       └── example_listing_spider.py                # placeholder site; thin — no decisions/mutations in the callback
+│
+├── .claude/skills/probe-site/SKILL.md                # drives `cv_scrape probe`, adds API-discovery (WebSearch)
+│                                                       # and selector/SitePolicy synthesis on top — see below
 │
 └── tests/
     └── (mirrors state/interaction/logic/observation/effect/flow — logic tests need no fixtures)
@@ -130,9 +153,41 @@ cv-scrape/
 | Challenge-page detection | `interaction/receive_fetch_response.py`, `logic/classify_response.py` | normalizing uncontrolled bytes is interaction; tagging the now-trusted envelope is logic |
 | Cookie/session continuity | `state/session.py`, `observation/read_session_state.py`, `effect/update_session_state.py` | reading our own jar unchanged is observation; storing new cookies is effect |
 
-All `[WAF]`-tagged files are stubs today: docstring + function/class signatures, no
-bodies. `flow/middlewares.py` sequences calls into them, but the calls are no-ops —
-the spider runs unthrottled now and gains countermeasures later with no restructuring.
+All other `[WAF]`-tagged files are stubs today: docstring + function/class
+signatures, no bodies. `flow/middlewares.py` sequences calls into them, but the
+calls are no-ops — the spider runs unthrottled now and gains countermeasures later
+with no restructuring. Two exceptions: `interaction/receive_fetch_response.py` and
+`logic/classify_response.py` are implemented for real, because the `[PROBE]`
+vertical below needed a real caller for both — the runtime WAF path gets them for
+free when `flow/middlewares.py` is filled in.
+
+## Site-probing vertical (pre-crawl investigation) `[PROBE]`
+
+A different behavior from the WAF countermeasures above: one-shot investigation of
+an unfamiliar site *before* a spider exists for it, not per-request handling
+*inside* a crawl. Triggered by `cv_scrape probe <url>` (see
+`.claude/skills/probe-site/SKILL.md` for the conversational skill that drives it and
+adds the parts that need judgment rather than a fixed rule — recognizing a
+documented public API, proposing selectors from the saved markup).
+
+| Concern | Files | Why there |
+|---|---|---|
+| Fetching (raw + rendered) | `observation/fetch_page_raw.py`, `observation/fetch_page_rendered.py` | downloading is observation (Ambiguous Call #1) — but unlike the crawl path, Scrapy's engine isn't doing the download here, so the probe needs its own explicit fetch pieces. Raw (httpx) and rendered (playwright) are two different "other systems" to ask, not one function with a caller-selecting flag. |
+| Normalizing + classifying | `interaction/receive_fetch_response.py`, `logic/classify_response.py` | same pieces the WAF path will use later — reused, not duplicated, per the one rule's second consequence |
+| WAF vendor / framework / structured data | `logic/detect_waf_vendor.py`, `logic/detect_framework_signals.py`, `logic/discover_structured_data.py` | pure decisions over an envelope already in hand; results land in `state/*_signals.py` / `state/*_findings.py`, mirroring how `logic/score_match.py` returns `state/match_score.py` |
+| robots.txt posture | `logic/evaluate_robots_txt.py` → `state/robots_evaluation.py` | pure decision over already-fetched text; the fetch itself is just another `fetch_page_raw` call, not a separate piece |
+| JS-requirement | `logic/compare_raw_vs_rendered.py` | pure diff over the raw body and rendered body already in hand |
+| Sample expansion | `logic/extract_same_domain_links.py` | pure decision over an already-fetched body, keeps the "small multi-page sample" bounded and same-domain |
+| Rate-limit signal | `logic/detect_rate_limit_signal.py` (per request), `logic/summarize_rate_limit_signals.py` (reduced across the run) | keeps `flow/probe_site.py` from inspecting raw status/headers itself to reach a determination |
+| Persistence | `effect/save_site_profile.py` → `data/probes/<domain>/profile.json` + `raw/`, `rendered/` HTML snapshots | investigation output, not scrape results — files, not the SQLite store, so the skill and the user can read it directly |
+| Sequencing | `flow/probe_site.py` | robots.txt first (stops sampling further if disallowed, still saves what was gathered) → small paced sample, raw + rendered → assemble `state/site_profile.py` → save |
+
+`WafVendor` (in `logic/detect_waf_vendor.py`) and `JsRequirement` (in
+`logic/compare_raw_vs_rendered.py`) are bare tags colocated with the logic that
+produces them, same placement as `ResponseTag` in `classify_response.py` — richer
+records (`FrameworkSignals`, `StructuredDataFindings`, `RobotsEvaluation`,
+`RateLimitFindings`) live in `state/` instead, since they're closer to "what it is"
+than a single-value tag.
 
 ## Where the four core features live
 
@@ -150,6 +205,11 @@ the spider runs unthrottled now and gains countermeasures later with no restruct
   (matching needs jobs × scores joins) while staying dependency-light (stdlib
   `sqlite3`). Contained entirely inside `state/store.py` + the read/write modules, so
   swapping later doesn't touch logic/flow.
+- **Site probing**: see the dedicated section above — `observation/fetch_page_raw.py`
+  + `fetch_page_rendered.py` → `interaction/receive_fetch_response.py` →
+  `logic/classify_response.py` + the WAF-vendor/framework/structured-data/
+  robots/JS-requirement/rate-limit logic → `state/site_profile.py` →
+  `effect/save_site_profile.py`, sequenced by `flow/probe_site.py`.
 
 ## Ambiguous placement calls (for the record)
 
@@ -174,10 +234,25 @@ the spider runs unthrottled now and gains countermeasures later with no restruct
 5. **`store.py` / `settings.py`**: treated as exceptions to the six categories — neither
    is a decision/fetch/mutation on its own; `store.py` is declarative "what the store
    is" (state), `settings.py`/`scrapy.cfg` is Scrapy-mandated static wiring.
+6. **Probe snapshot filenames**: `effect/save_site_profile.py` names each saved HTML
+   snapshot by its index within `profile.json`'s `samples` list, filtered by
+   renderer (`raw/0.html`, `raw/1.html`, ...) rather than deriving a name from the
+   URL. That's a persistence-mechanics detail, not a domain decision, so it lives in
+   the effect rather than earning its own logic piece.
+7. **Probe's own footprint**: `flow/probe_site.py` paces requests with
+   `robots.crawl_delay or DEFAULT_DELAY_SECONDS` inline rather than through a logic
+   piece — it's a policy default, not a determination reached by inspecting fetched
+   content, so it doesn't cross the "flow may not decide" line the way branching on
+   raw status/headers would.
 
 ## Tooling defaults
 
-- **Dependency/env management**: `uv` with `pyproject.toml`. Core dep: `scrapy`. CV
-  parsing libs (`pdfplumber`, `python-docx`) get added when those stub bodies are
-  filled in — not needed for the blueprint itself.
-- **Persistence**: SQLite (stdlib `sqlite3`, no extra dependency).
+- **Dependency/env management**: `uv` with `pyproject.toml`. Core deps: `scrapy`,
+  `httpx` (raw probe fetches), `playwright` (rendered probe fetches — after `uv
+  sync`, browser binaries still need `uv run playwright install chromium`, a
+  several-hundred-MB download, run manually rather than automatically). CV parsing
+  libs (`pdfplumber`, `python-docx`) get added when those stub bodies are filled in.
+- **Persistence**: SQLite (stdlib `sqlite3`, no extra dependency) for scrape/match
+  data; plain files under `data/probes/` for probe investigation output (see
+  site-probing vertical above) — different data, different lifetime, not the same
+  store.

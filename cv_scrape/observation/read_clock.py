@@ -1,5 +1,9 @@
-"""Observation: [WAF] the current time. Not implemented yet — this is the extension point."""
+"""Observation: the current time. First real caller is flow/probe_site.py's probe
+timestamp; the runtime WAF path (backoff/retry) gets this for free later.
+"""
+
+import time
 
 
 def read_clock() -> float:
-    raise NotImplementedError
+    return time.time()
