@@ -1,6 +1,11 @@
 """Flow: placeholder spider demonstrating the pattern. Kept flow-only — it must never
 pick fields out of the response itself (that's interaction/parse_job_posting_html.py)
 or decide anything; it only delegates and yields/routes.
+
+Lives under spiders/, not flow/, because Scrapy discovers spider classes by that
+directory path — a framework requirement on file location, not a behavioral category.
+The `except RejectedJobPosting` is routing on the tag the interaction boundary already
+determined (rejected vs. accepted), not a decision made here.
 """
 
 import scrapy

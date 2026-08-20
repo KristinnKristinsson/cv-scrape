@@ -1,4 +1,11 @@
-"""Thin CLI dispatcher. Flow: parses argv, calls into flow/*, does not decide or mutate itself."""
+"""Thin CLI dispatcher. Flow: parses argv, calls into flow/*, does not decide or mutate itself.
+
+argv is uncontrolled input, so parsing it is technically an interaction-boundary concern —
+but argparse *is* the validate/reject/normalize step (it rejects bad input itself, via
+SystemExit), and there is no further trust decision left for a separate interaction/
+module to make. Kept inline as framework wiring, same as settings.py, rather than split
+into its own piece for a boundary the stdlib already fully guards.
+"""
 
 import argparse
 import sys
