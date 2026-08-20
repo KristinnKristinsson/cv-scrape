@@ -1,0 +1,20 @@
+[project]
+name = "cv-scrape"
+version = "0.1.0"
+description = "Scrape job postings and match them against a CV."
+requires-python = ">=3.11"
+dependencies = [
+    "scrapy>=2.11",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["cv_scrape*"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
