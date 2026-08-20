@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 
 import cv_scrape.effect.save_site_profile as save_site_profile_module
 from cv_scrape.effect.save_site_profile import save_site_profile
@@ -39,19 +40,24 @@ def test_writes_profile_json_and_snapshots(tmp_path, monkeypatch):
 
     path = save_site_profile(_profile(), raw_bodies=[b"<html>raw</html>"], rendered_bodies=[b"<html>rendered</html>"])
 
-    assert path == tmp_path / "example.com" / "profile.json"
+    run_dir = tmp_path / "example.com" / "2026-08-20T00-00-00+00-00"
+    assert path == run_dir / "profile.json"
     saved = json.loads(path.read_text())
     assert saved["domain"] == "example.com"
     assert saved["waf_vendor"] == "NONE"
 
-    assert (tmp_path / "example.com" / "raw" / "0.html").read_bytes() == b"<html>raw</html>"
-    assert (tmp_path / "example.com" / "rendered" / "0.html").read_bytes() == b"<html>rendered</html>"
+    assert (run_dir / "raw" / "0.html").read_bytes() == b"<html>raw</html>"
+    assert (run_dir / "rendered" / "0.html").read_bytes() == b"<html>rendered</html>"
 
 
-def test_rerunning_overwrites_in_place(tmp_path, monkeypatch):
+def test_rerunning_keeps_each_run_in_its_own_directory(tmp_path, monkeypatch):
     monkeypatch.setattr(save_site_profile_module, "PROBES_DIR", tmp_path)
 
-    save_site_profile(_profile(), raw_bodies=[b"first"], rendered_bodies=[])
-    save_site_profile(_profile(), raw_bodies=[b"second"], rendered_bodies=[])
+    first_profile = replace(_profile(), probed_at="2026-08-20T00:00:00+00:00")
+    second_profile = replace(_profile(), probed_at="2026-08-20T00:05:00+00:00")
 
-    assert (tmp_path / "example.com" / "raw" / "0.html").read_bytes() == b"second"
+    save_site_profile(first_profile, raw_bodies=[b"first"], rendered_bodies=[])
+    save_site_profile(second_profile, raw_bodies=[b"second"], rendered_bodies=[])
+
+    assert (tmp_path / "example.com" / "2026-08-20T00-00-00+00-00" / "raw" / "0.html").read_bytes() == b"first"
+    assert (tmp_path / "example.com" / "2026-08-20T00-05-00+00-00" / "raw" / "0.html").read_bytes() == b"second"

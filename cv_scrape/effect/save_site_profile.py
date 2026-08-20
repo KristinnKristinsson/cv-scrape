@@ -1,6 +1,11 @@
-"""Effect: convergent write — safe to repeat, overwrites in place. Persists probe
-findings as files under data/probes/, not the SQLite store: this is investigation
-output for the skill and the user to read, not scrape results.
+"""Effect: writes each run to its own directory under data/probes/<domain>/<run_id>/,
+never overwriting a prior run — this is investigation output for the skill and the
+user to read, not scrape results, so unlike save_job_posting's convergent upsert we
+deliberately keep every run's evidence intact and dated rather than converging
+runs onto one shared, possibly-shrinking set of files. Site data itself (job
+postings) stays on the convergent-upsert path; only this investigation output
+works this way. run_id is profile.probed_at (already unique per run, since it
+comes from observation/read_clock.py), sanitized for use as a path segment.
 
 raw_bodies/rendered_bodies are the fetched bytes for each ProbeSample in profile.samples
 whose renderer matches, in the same order — sample i's snapshot is
@@ -17,9 +22,10 @@ PROBES_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "probes"
 
 
 def save_site_profile(profile: SiteProfile, raw_bodies: list[bytes], rendered_bodies: list[bytes]) -> Path:
-    site_dir = PROBES_DIR / profile.domain
-    raw_dir = site_dir / "raw"
-    rendered_dir = site_dir / "rendered"
+    run_id = profile.probed_at.replace(":", "-")
+    run_dir = PROBES_DIR / profile.domain / run_id
+    raw_dir = run_dir / "raw"
+    rendered_dir = run_dir / "rendered"
     raw_dir.mkdir(parents=True, exist_ok=True)
     rendered_dir.mkdir(parents=True, exist_ok=True)
 
@@ -28,6 +34,6 @@ def save_site_profile(profile: SiteProfile, raw_bodies: list[bytes], rendered_bo
     for index, body in enumerate(rendered_bodies):
         (rendered_dir / f"{index}.html").write_bytes(body)
 
-    profile_path = site_dir / "profile.json"
+    profile_path = run_dir / "profile.json"
     profile_path.write_text(json.dumps(asdict(profile), indent=2), encoding="utf-8")
     return profile_path

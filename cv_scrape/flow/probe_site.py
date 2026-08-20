@@ -3,6 +3,10 @@ one site: robots.txt posture first (stops sampling further if disallowed, but st
 saves what was gathered), then a small multi-page sample fetched both raw and
 rendered. No decision, no mutation of its own — routes on tags the logic pieces
 already returned (fetch succeeded/failed, response accepted/rejected, allowed/not).
+
+robots.txt bytes are uncontrolled external input like every other fetched body in
+this flow, so they cross receive_fetch_response before evaluate_robots_txt ever
+sees them — no separate, unguarded decode path for this one fetch.
 """
 
 import time
@@ -43,7 +47,15 @@ def probe_site(target_url: str, pages: int = DEFAULT_SAMPLE_PAGES) -> None:
     rate_limit_signals: list[RateLimitSignal] = []
 
     robots_result = fetch_page_raw(f"{parsed_target.scheme}://{domain}/robots.txt")
-    robots_txt = robots_result.body.decode("utf-8", errors="ignore") if isinstance(robots_result, RawFetchResult) else None
+    robots_txt = None
+    if isinstance(robots_result, RawFetchResult):
+        try:
+            robots_envelope = receive_fetch_response(
+                robots_result.url, robots_result.status, robots_result.headers, robots_result.body
+            )
+            robots_txt = robots_envelope.body.decode("utf-8")
+        except RejectedResponse:
+            pass
     robots = evaluate_robots_txt(robots_txt, target_path, PROBE_USER_AGENT)
 
     waf_vendor = WafVendor.UNKNOWN.name

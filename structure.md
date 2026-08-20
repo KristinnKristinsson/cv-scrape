@@ -92,7 +92,7 @@ cv-scrape/
 │   │   ├── rotate_header_selection.py  [WAF]        # ATOMIC get-next-and-advance own index
 │   │   ├── update_session_state.py     [WAF]        # store newly-received cookies
 │   │   ├── enqueue_pending_fetch.py    [WAF]
-│   │   └── save_site_profile.py         [PROBE]     # convergent write of a SiteProfile + HTML snapshots to disk
+│   │   └── save_site_profile.py         [PROBE]     # per-run write of a SiteProfile + HTML snapshots to disk
 │   │
 │   ├── flow/
 │   │   ├── pipelines.py                            # Scrapy item pipeline: interaction → logic → effect
@@ -130,7 +130,8 @@ cv-scrape/
 - **observation/** — fetches that change nothing: the clock, our *currently stored*
   (not advanced) cookies, read-only store/queue queries.
 - **effect/** — all mutation, including our own crawler-owned state: persistence
-  (convergent upserts, safe to repeat), the two atomic get-and-advance operations
+  (convergent upserts, safe to repeat, for scrape/match data — see Ambiguous Call #6
+  for why probe output deliberately isn't), the two atomic get-and-advance operations
   (token bucket, rotation index — collapsed into one atomic effect each per the
   Atomicity rule, not split into observation+effect, since that split would open the
   exact stale-check race window the spec warns about), writing new cookies, enqueuing
@@ -173,13 +174,13 @@ documented public API, proposing selectors from the saved markup).
 | Concern | Files | Why there |
 |---|---|---|
 | Fetching (raw + rendered) | `observation/fetch_page_raw.py`, `observation/fetch_page_rendered.py` | downloading is observation (Ambiguous Call #1) — but unlike the crawl path, Scrapy's engine isn't doing the download here, so the probe needs its own explicit fetch pieces. Raw (httpx) and rendered (playwright) are two different "other systems" to ask, not one function with a caller-selecting flag. |
-| Normalizing + classifying | `interaction/receive_fetch_response.py`, `logic/classify_response.py` | same pieces the WAF path will use later — reused, not duplicated, per the one rule's second consequence |
+| Normalizing + classifying | `interaction/receive_fetch_response.py`, `logic/classify_response.py` | same pieces the WAF path will use later — reused, not duplicated, per the one rule's second consequence. Every fetched body in `flow/probe_site.py`, robots.txt included, crosses `receive_fetch_response` before any logic sees it — no fetch gets a separate, unguarded decode path. |
 | WAF vendor / framework / structured data | `logic/detect_waf_vendor.py`, `logic/detect_framework_signals.py`, `logic/discover_structured_data.py` | pure decisions over an envelope already in hand; results land in `state/*_signals.py` / `state/*_findings.py`, mirroring how `logic/score_match.py` returns `state/match_score.py` |
-| robots.txt posture | `logic/evaluate_robots_txt.py` → `state/robots_evaluation.py` | pure decision over already-fetched text; the fetch itself is just another `fetch_page_raw` call, not a separate piece |
+| robots.txt posture | `logic/evaluate_robots_txt.py` → `state/robots_evaluation.py` | pure decision over already-decoded text; the fetch is another `fetch_page_raw` call and the bytes still cross `receive_fetch_response` first, same as any other fetched body — not a separate piece, not a separate guard |
 | JS-requirement | `logic/compare_raw_vs_rendered.py` | pure diff over the raw body and rendered body already in hand |
 | Sample expansion | `logic/extract_same_domain_links.py` | pure decision over an already-fetched body, keeps the "small multi-page sample" bounded and same-domain |
 | Rate-limit signal | `logic/detect_rate_limit_signal.py` (per request), `logic/summarize_rate_limit_signals.py` (reduced across the run) | keeps `flow/probe_site.py` from inspecting raw status/headers itself to reach a determination |
-| Persistence | `effect/save_site_profile.py` → `data/probes/<domain>/profile.json` + `raw/`, `rendered/` HTML snapshots | investigation output, not scrape results — files, not the SQLite store, so the skill and the user can read it directly |
+| Persistence | `effect/save_site_profile.py` → `data/probes/<domain>/<run_id>/profile.json` + `raw/`, `rendered/` HTML snapshots | investigation output, not scrape results — files, not the SQLite store, so the skill and the user can read it directly. Deliberately not a convergent upsert like the SQLite writers: see Ambiguous Call #6. |
 | Sequencing | `flow/probe_site.py` | robots.txt first (stops sampling further if disallowed, still saves what was gathered) → small paced sample, raw + rendered → assemble `state/site_profile.py` → save |
 
 `WafVendor` (in `logic/detect_waf_vendor.py`) and `JsRequirement` (in
@@ -234,11 +235,22 @@ than a single-value tag.
 5. **`store.py` / `settings.py`**: treated as exceptions to the six categories — neither
    is a decision/fetch/mutation on its own; `store.py` is declarative "what the store
    is" (state), `settings.py`/`scrapy.cfg` is Scrapy-mandated static wiring.
-6. **Probe snapshot filenames**: `effect/save_site_profile.py` names each saved HTML
-   snapshot by its index within `profile.json`'s `samples` list, filtered by
-   renderer (`raw/0.html`, `raw/1.html`, ...) rather than deriving a name from the
-   URL. That's a persistence-mechanics detail, not a domain decision, so it lives in
-   the effect rather than earning its own logic piece.
+6. **Probe run directories, not an upsert**: `effect/save_site_profile.py` writes
+   each run under `data/probes/<domain>/<run_id>/` — `run_id` is `profile.probed_at`
+   (from `observation/read_clock.py`, already unique per run), sanitized for use as
+   a path segment — rather than overwriting one shared `<domain>/` directory in
+   place. A shared, overwritten directory would let a smaller run (fewer samples,
+   e.g. because robots.txt started disallowing) leave a *previous* run's snapshots
+   on disk uncorrelated with the new `profile.json` — a stale mix presented as one
+   run's evidence. Per-run directories side-step that: nothing is ever partially
+   overwritten, so there's no requirement to converge (compare Ambiguous Call #4,
+   where convergence *is* required — that's a repeatable check-and-change on shared
+   crawler state, not one-off investigation output). Within a run, snapshots are
+   still named by index within `profile.json`'s `samples` list, filtered by renderer
+   (`raw/0.html`, `raw/1.html`, ...) rather than derived from the URL — that
+   filename detail is unchanged, still a persistence-mechanics detail rather than a
+   domain decision, so it stays in the effect rather than earning its own logic
+   piece.
 7. **Probe's own footprint**: `flow/probe_site.py` paces requests with
    `robots.crawl_delay or DEFAULT_DELAY_SECONDS` inline rather than through a logic
    piece — it's a policy default, not a determination reached by inspecting fetched
