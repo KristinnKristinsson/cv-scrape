@@ -9,7 +9,7 @@ def test_schema_creates_expected_tables():
     conn = sqlite3.connect(":memory:")
     conn.executescript(SCHEMA)
     tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    assert {"job_posting", "cv", "match_score", "fetch_watermark"} <= tables
+    assert {"job_posting", "cv", "match_score", "fetch_watermark", "job_signals"} <= tables
 
 
 def test_add_missing_columns_adds_last_fetched_at_to_a_pre_existing_table():

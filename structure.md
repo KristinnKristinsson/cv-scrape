@@ -10,6 +10,8 @@ document with the same reasoning shape (category + one-line why) rather than gue
 
 A personal tool: (1) scrape job postings from various sites with Scrapy, (2) parse the
 user's own CV, (3) score/match postings against it, (4) persist results for querying.
+See `Objectives.md` for *why* — the market-benchmark methodology this pipeline exists
+to serve, and where steps 3–4 above still fall short of it.
 
 Some target sites run WAF/bot challenges. The intent is to defeat them later —
 without external proxies or third-party anti-bot services — but that logic is
@@ -33,7 +35,7 @@ cv-scrape/
 ├── cv_scrape/
 │   ├── __init__.py
 │   ├── settings.py                               # Scrapy-mandated static config (exception, see notes)
-│   ├── __main__.py                               # thin CLI dispatcher → flow/* (ingest-cv, match)
+│   ├── __main__.py                               # thin CLI dispatcher → flow/* (ingest-cv, match, extract-signals)
 │   │
 │   ├── state/
 │   │   ├── job_posting.py                        # JobPosting entity (doubles as the Scrapy Item shape)
@@ -51,6 +53,7 @@ cv-scrape/
 │   │   ├── framework_signals.py        [PROBE]    # generator/powered-by/server/marker hints
 │   │   ├── structured_data_findings.py [PROBE]    # JSON-LD/feed/sitemap/API hints
 │   │   ├── rate_limit_findings.py      [PROBE]    # 429/Retry-After signal, summarized
+│   │   ├── job_signals.py              [SIGNALS]  # role family/seniority/language/etc. inferred from a posting
 │   │   └── store.py                               # SQLite connection factory + schema
 │   │
 │   ├── interaction/
@@ -73,13 +76,24 @@ cv-scrape/
 │   │   ├── compare_raw_vs_rendered.py   [PROBE]    # raw body + rendered body in hand → JS-requirement tag
 │   │   ├── extract_same_domain_links.py [PROBE]    # body in hand → a few same-domain URLs for the sample
 │   │   ├── detect_rate_limit_signal.py  [PROBE]    # one status+headers in hand → hit/Retry-After
-│   │   └── summarize_rate_limit_signals.py [PROBE] # a probe run's signals in hand → RateLimitFindings
+│   │   ├── summarize_rate_limit_signals.py [PROBE] # a probe run's signals in hand → RateLimitFindings
+│   │   ├── classify_role_family.py     [SIGNALS]   # JobPosting in hand → RoleFamily tag
+│   │   ├── classify_seniority.py       [SIGNALS]   # JobPosting + years-required in hand → SeniorityTag
+│   │   ├── classify_company_type.py    [SIGNALS]   # JobPosting in hand → CompanyType tag
+│   │   ├── detect_language_requirement.py [SIGNALS] # JobPosting in hand → LanguageRequirement tag
+│   │   ├── detect_education_requirement.py [SIGNALS] # JobPosting in hand → EducationRequirement tag
+│   │   ├── extract_technologies_mentioned.py [SIGNALS] # JobPosting in hand → tuple of matched tech keywords
+│   │   ├── extract_cloud_platforms_mentioned.py [SIGNALS] # JobPosting in hand → tuple of gcp/aws/azure
+│   │   ├── extract_years_experience_required.py [SIGNALS] # JobPosting in hand → years figure, or None
+│   │   ├── extract_salary_mentioned.py [SIGNALS]   # JobPosting in hand → raw salary substring, or None
+│   │   └── deduplicate_job_postings.py             # list[JobPosting] in hand → same list, repeat vacancies collapsed
 │   │
 │   ├── observation/
 │   │   ├── read_clock.py               [WAF]       # implemented; first real caller: flow/probe_site.py [PROBE]
 │   │   ├── read_session_state.py       [WAF]       # read our own stored cookies, unchanged
 │   │   ├── read_stored_jobs.py
 │   │   ├── read_stored_cv.py
+│   │   ├── read_stored_job_signals.py  [SIGNALS]
 │   │   ├── read_pending_fetches.py     [WAF]
 │   │   ├── fetch_page_raw.py            [PROBE]    # plain HTTP GET (httpx); "another system's answer"
 │   │   └── fetch_page_rendered.py       [PROBE]    # same URL via a real headless browser (playwright)
@@ -92,7 +106,8 @@ cv-scrape/
 │   │   ├── rotate_header_selection.py  [WAF]        # ATOMIC get-next-and-advance own index
 │   │   ├── update_session_state.py     [WAF]        # store newly-received cookies
 │   │   ├── enqueue_pending_fetch.py    [WAF]
-│   │   └── save_site_profile.py         [PROBE]     # per-run write of a SiteProfile + HTML snapshots to disk
+│   │   ├── save_site_profile.py         [PROBE]     # per-run write of a SiteProfile + HTML snapshots to disk
+│   │   └── save_job_signals.py          [SIGNALS]   # convergent upsert, keyed by job_url
 │   │
 │   ├── flow/
 │   │   ├── pipelines.py                            # Scrapy item pipeline: interaction → logic → effect
@@ -100,7 +115,8 @@ cv-scrape/
 │   │   ├── retry_pending_fetches.py    [WAF]        # future: drain queue, route on decide_retry_action's tag
 │   │   ├── ingest_cv.py                             # CLI flow: file path → interaction → effect
 │   │   ├── match_jobs_to_cv.py                      # CLI flow: observation×2 → logic → effect
-│   │   └── probe_site.py                [PROBE]     # CLI flow: `cv_scrape probe <url>` — see below
+│   │   ├── probe_site.py                [PROBE]     # CLI flow: `cv_scrape probe <url>` — see below
+│   │   └── extract_job_signals.py       [SIGNALS]   # CLI flow: `cv_scrape extract-signals` — see below
 │   │
 │   └── spiders/
 │       └── example_listing_spider.py                # placeholder site; thin — no decisions/mutations in the callback
@@ -190,7 +206,57 @@ records (`FrameworkSignals`, `StructuredDataFindings`, `RobotsEvaluation`,
 `RateLimitFindings`) live in `state/` instead, since they're closer to "what it is"
 than a single-value tag.
 
-## Where the four core features live
+## Job-signal extraction vertical `[SIGNALS]`
+
+Objectives.md step 3: most of the fields that matter for the Stockholm benchmark
+(role family, seniority, language/education requirement, company type,
+technologies, cloud platforms, years required, salary) aren't stated as labeled
+fields anywhere on a scraped page — they're only recoverable by reading a
+`JobPosting`'s own title/description text after it's already stored. Triggered by
+`cv_scrape extract-signals`, which runs over every stored posting (no per-domain
+fetching, no interaction boundary — the text is already-trusted stored state).
+
+Same granularity as the `[PROBE]` vertical (one small logic piece per
+determination, same input, different questions) rather than one monolithic
+extractor — per the one rule, "role family" and "seniority" are different
+determinations even though both read the same `JobPosting`, so they're different
+pieces:
+
+| Concern | Files | Why there |
+|---|---|---|
+| Role family | `logic/classify_role_family.py` → `RoleFamily` | title-keyword match against the seven families Objectives.md drafted; Python/backend titles additionally require a data-handling hint in the description (see note below) |
+| Seniority ("looks junior despite title") | `logic/extract_years_experience_required.py` → years figure, then `logic/classify_seniority.py` (that figure + the posting) → `SeniorityTag` | years-required is reused by seniority rather than re-derived, same already-in-hand-determination pattern as `logic/decide_retry_action.py` taking a `PendingFetch` |
+| Language / education requirement | `logic/detect_language_requirement.py`, `logic/detect_education_requirement.py` | independent keyword reads over the same description text |
+| Company type | `logic/classify_company_type.py` → `CompanyType` | company-name/phrase heuristic (agency vs. direct employer), not a registry lookup |
+| Technologies / cloud platforms | `logic/extract_technologies_mentioned.py`, `logic/extract_cloud_platforms_mentioned.py` | kept separate per the one rule — "all tech" and "which cloud" are different questions over the same text, unifying them would need a caller-selecting flag |
+| Salary | `logic/extract_salary_mentioned.py` | best-effort raw substring, not structured parsing — most Swedish ads don't state one |
+| Persistence | `effect/save_job_signals.py` → `job_signals` SQLite table, `observation/read_stored_job_signals.py` | convergent upsert keyed by `job_url`, same shape as `save_match_score.py` |
+| Sequencing | `flow/extract_job_signals.py` | reads every stored posting → calls the pieces above → assembles `state/job_signals.py` → saves, mirroring `flow/probe_site.py` assembling `SiteProfile` |
+
+**Known heuristic limitation, found and fixed during the first real run
+(2026-08-20):** the data-handling hint list for Python/backend titles originally
+included the bare words `"data"` and `"analytics"`. Since almost any job
+description mentions "data" somewhere incidentally (player data, GDPR, analytics
+events), this matched most backend postings in the sample regardless of actual
+relevance — 37 of the 51 `Backend Developer`-titled postings, including several
+game studios with no data component at all. Fixed by requiring more specific
+compound markers (`"data pipeline"`, `"data warehouse"`, `"etl"`, `"dbt"`,
+`"databricks"`, etc.) instead of the bare words — dropped the false-positive count
+to 6, all genuinely data-adjacent on inspection. Documented here as a warning for
+any future hint list in this vertical: a single common word as a boundary
+condition is not a heuristic, it's a coin flip.
+
+**`logic/deduplicate_job_postings.py`** is a sibling piece, not part of this
+vertical — it doesn't infer anything from a posting's text, it decides which of
+several stored `JobPosting`s are the same real vacancy seen twice (cross-posted
+across `arbetsformedlingen.se`/`jobbsafari.se`, or resubmitted twice on
+Platsbanken under different ad IDs — neither catchable by the store's own `url`
+primary key). Left untagged, and not yet called from any `flow/`, since its only
+intended caller — the step 4 market-distribution builder — doesn't exist yet;
+reified now per the same "value first, wire in later" sequencing
+`classify_role_family.py` followed in step 3.
+
+## Where the core features live
 
 - **CV parsing**: `interaction/parse_cv_document.py` → `state/cv.py` →
   `effect/save_cv.py`, sequenced by `flow/ingest_cv.py`.
@@ -211,6 +277,10 @@ than a single-value tag.
   `logic/classify_response.py` + the WAF-vendor/framework/structured-data/
   robots/JS-requirement/rate-limit logic → `state/site_profile.py` →
   `effect/save_site_profile.py`, sequenced by `flow/probe_site.py`.
+- **Job-signal extraction**: see the dedicated section above —
+  `observation/read_stored_jobs.py` → the `classify_*`/`detect_*`/`extract_*`
+  `[SIGNALS]` logic → `state/job_signals.py` → `effect/save_job_signals.py`,
+  sequenced by `flow/extract_job_signals.py`.
 - **Job fetching via a public API** (Arbetsförmedlingen/Platsbanken): probing this
   domain (`data/probes/arbetsformedlingen.se/report.md`) found a free, keyless,
   first-party JSON API and a JS-required, structured-data-free HTML page — so this
