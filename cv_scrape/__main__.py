@@ -41,6 +41,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     fetch_jobs.add_argument("--q", help="Free-text query (searches headline, description, employer name).")
 
+    subparsers.add_parser(
+        "extract-signals", help="Extract inferred signals (role family, seniority, ...) for every stored job posting."
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest-cv":
@@ -71,6 +75,13 @@ def main(argv: list[str] | None = None) -> int:
             q=args.q,
         )
         print(f"Saved {saved} job posting(s).")
+        return 0
+
+    if args.command == "extract-signals":
+        from cv_scrape.flow.extract_job_signals import extract_job_signals
+
+        extracted = extract_job_signals()
+        print(f"Extracted signals for {extracted} job posting(s).")
         return 0
 
     return 1

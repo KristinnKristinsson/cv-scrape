@@ -38,6 +38,19 @@ CREATE TABLE IF NOT EXISTS fetch_watermark (
     query_key TEXT PRIMARY KEY,
     last_run_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS job_signals (
+    job_url TEXT PRIMARY KEY REFERENCES job_posting(url),
+    role_family TEXT NOT NULL,
+    seniority TEXT NOT NULL,
+    language_requirement TEXT NOT NULL,
+    education_requirement TEXT NOT NULL,
+    company_type TEXT NOT NULL,
+    technologies TEXT NOT NULL,
+    cloud_platforms TEXT NOT NULL,
+    years_experience_required REAL,
+    salary_mentioned TEXT
+);
 """
 
 # CREATE TABLE IF NOT EXISTS only covers tables missing outright — a table that
