@@ -234,6 +234,27 @@ than a single-value tag.
   determination out), and `logic/decide_pagination_action.py` (offset vs. the API's
   `total`, and whether the page came back empty, → `CONTINUE`/`STOP`); the flow only
   routes on the tags.
+- **Job scraping: jobbsafari.se**: probing this domain
+  (`data/probes/jobbsafari.se/report.md`) found no API (the site's own internal API is
+  robots-disallowed), `STATIC_OK` HTML, and — critically — a complete `JobPosting`
+  JSON-LD block on every job-detail page, richer and more stable than the listing
+  card's MUI/emotion markup (class names that churn across deploys). So this domain is
+  scraped in two stages instead of the single CSS-selector pass
+  `parse_job_posting_html.py`/`SitePolicy` were built for: `spiders/
+  jobbsafari_listing_spider.py` walks listing pages via `interaction/
+  parse_job_listing_page.py` (detail-page + `rel="next"` links only — no per-field
+  extraction, since the churny listing markup has nothing this project needs that the
+  detail page doesn't have more reliably), then fetches each detail page and extracts
+  the full `JobPosting` via `interaction/parse_job_posting_json_ld.py` (JSON-LD key
+  access, reusing `RejectedJobPosting` from `parse_job_posting_html.py` — same "doesn't
+  satisfy JobPosting's shape" determination regardless of mechanism, same reasoning as
+  `parse_job_search_api_response.py`). `state/job_listing_page.py` reifies a listing
+  page's already-parsed links, mirroring `state/job_search_api_page.py`'s shape. Both
+  spider callbacks route on `logic/classify_response.py`'s tag before trusting a body
+  as real markup, since Cloudflare fronts this site even though it wasn't seen actively
+  challenging during probing. No `SitePolicy` is used — see the two interaction
+  pieces' docstrings for why a CSS-selector-shaped config doesn't fit a site whose real
+  extraction mechanism is JSON-LD key access.
 
 ## Ambiguous placement calls (for the record)
 
