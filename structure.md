@@ -211,6 +211,21 @@ than a single-value tag.
   `logic/classify_response.py` + the WAF-vendor/framework/structured-data/
   robots/JS-requirement/rate-limit logic → `state/site_profile.py` →
   `effect/save_site_profile.py`, sequenced by `flow/probe_site.py`.
+- **Job fetching via a public API** (Arbetsförmedlingen/Platsbanken): probing this
+  domain (`data/probes/arbetsformedlingen.se/report.md`) found a free, keyless,
+  first-party JSON API and a JS-required, structured-data-free HTML page — so this
+  domain is fetched via the API, never scraped. Reuses `observation/fetch_page_raw.py`
+  and `interaction/receive_fetch_response.py` unchanged (a GET and a decode guard
+  don't care whether the body is HTML or JSON), adds
+  `interaction/parse_job_search_api_response.py` (JSON-shape guard + per-ad field
+  extraction into `state/job_posting.py`, reusing `RejectedJobPosting` from
+  `parse_job_posting_html.py` since "doesn't satisfy JobPosting's shape" is the same
+  determination regardless of source format) and `state/job_search_api_page.py`
+  (postings + the API's own `total`, so flow knows when to stop paginating without
+  re-decoding the body) → `effect/save_job_posting.py`, sequenced by
+  `flow/fetch_jobs_from_api.py`. No spider, no `SitePolicy`, none of the
+  WAF-countermeasure or probe machinery — a documented first-party API is not an
+  uncontrolled adversarial boundary the way scraped HTML is.
 
 ## Ambiguous placement calls (for the record)
 

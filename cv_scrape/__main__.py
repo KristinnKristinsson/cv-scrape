@@ -26,6 +26,21 @@ def main(argv: list[str] | None = None) -> int:
         "--pages", type=int, default=3, help="Sample size: the target page plus this many extra same-domain links."
     )
 
+    fetch_jobs = subparsers.add_parser(
+        "fetch-jobs", help="Fetch job postings from Arbetsformedlingen's public JobSearch API."
+    )
+    fetch_jobs.add_argument("--region", help="Taxonomy region code, e.g. CifL_Rzy_Mku for Stockholms lan.")
+    fetch_jobs.add_argument(
+        "--occupation-group",
+        action="append",
+        default=[],
+        help="Taxonomy occupation-group (SSYK level 4) code. Repeatable.",
+    )
+    fetch_jobs.add_argument(
+        "--employment-type", action="append", default=[], help="Taxonomy employment-type code. Repeatable."
+    )
+    fetch_jobs.add_argument("--q", help="Free-text query (searches headline, description, employer name).")
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest-cv":
@@ -44,6 +59,18 @@ def main(argv: list[str] | None = None) -> int:
         from cv_scrape.flow.probe_site import probe_site
 
         probe_site(args.url, pages=args.pages)
+        return 0
+
+    if args.command == "fetch-jobs":
+        from cv_scrape.flow.fetch_jobs_from_api import fetch_jobs_from_api
+
+        saved = fetch_jobs_from_api(
+            region=args.region,
+            occupation_group=args.occupation_group,
+            employment_type=args.employment_type,
+            q=args.q,
+        )
+        print(f"Saved {saved} job posting(s).")
         return 0
 
     return 1
