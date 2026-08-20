@@ -1,6 +1,8 @@
-"""Flow: CLI-triggered. Sequences observation -> interaction -> effect against
-Arbetsförmedlingen's public JobSearch API, paginating until the API's own `total`
-count is exhausted. No decision, no mutation of its own.
+"""Flow: CLI-triggered. Sequences observation -> interaction -> logic -> effect
+against Arbetsförmedlingen's public JobSearch API, paginating until the API's own
+`total` count is exhausted. No decision, no mutation of its own — routes on tags
+logic/classify_fetch_status.py, logic/compute_published_after_minutes.py, and
+logic/decide_pagination_action.py already returned.
 
 This bypasses the spider/WAF path entirely: the API is documented, keyless, and
 first-party (see data/probes/arbetsformedlingen.se/report.md) — none of the
@@ -27,7 +29,6 @@ previously-narrower search can't silently miss postings older than some other
 search's watermark.
 """
 
-import math
 import time
 from collections.abc import Sequence
 from datetime import datetime, timezone
@@ -40,6 +41,9 @@ from cv_scrape.interaction.parse_job_search_api_response import (
     parse_job_search_api_response,
 )
 from cv_scrape.interaction.receive_fetch_response import RejectedResponse, receive_fetch_response
+from cv_scrape.logic.classify_fetch_status import FetchStatusOutcome, classify_fetch_status
+from cv_scrape.logic.compute_published_after_minutes import compute_published_after_minutes
+from cv_scrape.logic.decide_pagination_action import PaginationAction, decide_pagination_action
 from cv_scrape.observation.fetch_page_raw import RawFetchResult, fetch_page_raw
 from cv_scrape.observation.read_clock import read_clock
 from cv_scrape.observation.read_fetch_watermark import read_fetch_watermark
@@ -48,7 +52,6 @@ API_SEARCH_URL = "https://jobsearch.api.jobtechdev.se/search"
 PAGE_SIZE = 100
 MAX_OFFSET = 2000  # API's documented ceiling on the `offset` parameter
 DELAY_SECONDS = 0.5
-WATERMARK_SAFETY_MARGIN_MINUTES = 30  # covers clock skew / in-run drift; overlap is harmless (convergent upsert)
 
 
 class JobSearchApiFetchFailed(Exception):
@@ -69,10 +72,7 @@ def fetch_jobs_from_api(
 
     published_after_minutes = None
     if watermark is not None:
-        elapsed_minutes = (run_started_at_dt - datetime.fromisoformat(watermark.last_run_at)).total_seconds() / 60
-        published_after_minutes = max(
-            WATERMARK_SAFETY_MARGIN_MINUTES, math.ceil(elapsed_minutes) + WATERMARK_SAFETY_MARGIN_MINUTES
-        )
+        published_after_minutes = compute_published_after_minutes(run_started_at_dt, watermark.last_run_at)
 
     offset = 0
     saved = 0
@@ -92,7 +92,7 @@ def fetch_jobs_from_api(
         result = fetch_page_raw(url)
         if not isinstance(result, RawFetchResult):
             raise JobSearchApiFetchFailed(f"{url}: {result.reason}")
-        if result.status != 200:
+        if classify_fetch_status(result.status) is FetchStatusOutcome.FAILED:
             raise JobSearchApiFetchFailed(f"{url}: HTTP {result.status}")
 
         try:
@@ -106,7 +106,7 @@ def fetch_jobs_from_api(
         saved += len(page.postings)
 
         offset += PAGE_SIZE
-        if offset >= page.total or not page.postings:
+        if decide_pagination_action(offset, page.total, len(page.postings)) is PaginationAction.STOP:
             break
 
         time.sleep(DELAY_SECONDS)

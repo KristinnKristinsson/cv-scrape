@@ -225,7 +225,15 @@ than a single-value tag.
   re-decoding the body) → `effect/save_job_posting.py`, sequenced by
   `flow/fetch_jobs_from_api.py`. No spider, no `SitePolicy`, none of the
   WAF-countermeasure or probe machinery — a documented first-party API is not an
-  uncontrolled adversarial boundary the way scraped HTML is.
+  uncontrolled adversarial boundary the way scraped HTML is. Three decisions the flow
+  would otherwise make inline are pulled out as logic pieces, same as
+  `probe_site.py`'s: `logic/classify_fetch_status.py` (status code in → `OK`/`FAILED`
+  out, so the flow never branches on `result.status` itself),
+  `logic/compute_published_after_minutes.py` (elapsed time since the query's
+  watermark, plus a clock-skew safety margin, already-in-hand values in → a
+  determination out), and `logic/decide_pagination_action.py` (offset vs. the API's
+  `total`, and whether the page came back empty, → `CONTINUE`/`STOP`); the flow only
+  routes on the tags.
 
 ## Ambiguous placement calls (for the record)
 
