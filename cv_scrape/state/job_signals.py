@@ -11,6 +11,18 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
+class TechnologyRequirement:
+    """One technology mentioned in a posting, paired with how strongly it's
+    required — the pairing classify_technology_requirement_strength produces per
+    already-matched technology name. A component of JobSignals, not a freestanding
+    record, so it lives here rather than in its own file.
+    """
+
+    technology: str
+    strength: str
+
+
+@dataclass(frozen=True)
 class JobSignals:
     job_url: str
     role_family: str
@@ -18,7 +30,7 @@ class JobSignals:
     language_requirement: str
     education_requirement: str
     company_type: str
-    technologies: tuple[str, ...] = ()
+    technologies: tuple[TechnologyRequirement, ...] = ()
     cloud_platforms: tuple[str, ...] = ()
     years_experience_required: float | None = None
     salary_mentioned: str | None = None

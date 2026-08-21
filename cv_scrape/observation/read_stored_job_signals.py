@@ -2,7 +2,7 @@
 
 import json
 
-from cv_scrape.state.job_signals import JobSignals
+from cv_scrape.state.job_signals import JobSignals, TechnologyRequirement
 from cv_scrape.state.store import connect
 
 
@@ -23,7 +23,10 @@ def read_stored_job_signals() -> list[JobSignals]:
             language_requirement=row[3],
             education_requirement=row[4],
             company_type=row[5],
-            technologies=tuple(json.loads(row[6])),
+            technologies=tuple(
+                TechnologyRequirement(technology=t["technology"], strength=t["strength"])
+                for t in json.loads(row[6])
+            ),
             cloud_platforms=tuple(json.loads(row[7])),
             years_experience_required=row[8],
             salary_mentioned=row[9],

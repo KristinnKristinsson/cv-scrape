@@ -365,8 +365,6 @@ once and the real shape of the data is known, not before.
 - Market distribution / tiers: done — see "Step 4 market distribution" above. 5
   tiers over the 71 deduped postings (7 / 8 / 21 / 25 / 10); documented analysis,
   not code, per this document's own step 4–7 sequencing note.
-- Gap classification and positioning lanes: not yet produced — step 5 (placing the
-  user's evidence against the tiers above) comes first.
 - Step 5 handoff: the market-side output of steps 1–4 is written up standalone in
   `Market Benchmark Findings.md`, for another agent (one with the user's actual
   CV/evidence) to combine with that evidence and produce steps 5–7. This repo's
@@ -374,3 +372,12 @@ once and the real shape of the data is known, not before.
   evidence (the `cv` table is empty, no CV file exists in this repo) — step 5 needs
   that supplied separately, not guessed from the category list in this document's
   Mission section.
+- Steps 5–7: done (2026-08-21), once `candidate.yaml` supplied the evidence the
+  handoff above was waiting on. Findings in `Candidate Placement Findings.md`:
+  placement against the 71 deduped postings by family/tier, gap classification
+  (dbt/warehouse confirmed as the load-bearing capability gap; CI/CD ownership
+  un-auditable against the current extractor; Scala flagged as frequency without
+  requirement-strength data, not a confirmed gap), positioning-lane validation, and
+  a learning-ROI ranking. Also identifies the next concrete build (requirement-
+  strength extraction) as the one that would most improve this analysis, ahead of
+  generalizing it into `evaluate_candidate_against_job()`.

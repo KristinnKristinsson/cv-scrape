@@ -33,7 +33,9 @@ def save_job_signals(signals: JobSignals) -> None:
                 signals.language_requirement,
                 signals.education_requirement,
                 signals.company_type,
-                json.dumps(signals.technologies),
+                json.dumps(
+                    [{"technology": t.technology, "strength": t.strength} for t in signals.technologies]
+                ),
                 json.dumps(signals.cloud_platforms),
                 signals.years_experience_required,
                 signals.salary_mentioned,
