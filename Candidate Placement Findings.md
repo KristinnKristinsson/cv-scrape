@@ -193,6 +193,117 @@ this is that data point, not yet acted on). And `extract_technologies_mentioned.
 tracks `"postgres"` and `"postgresql"` as two separate keywords that will double-count
 the same posting — cosmetic, doesn't change any finding above.
 
+## Revisit with requirement-strength data (2026-08-21, continued)
+
+`classify_technology_requirement_strength` (see `Objectives.md`) is now built and
+`extract-signals` has been re-run over the full stored sample, so every technology in
+`job_signals.technologies` now carries `REQUIRED`/`PREFERRED`/`MENTIONED` instead of
+being a bare name. This closes the gap the previous pass explicitly flagged as
+unresolved — redoing the same 71-posting curated/deduped sample (reconstructed fresh:
+`role_family != UNMATCHED` joined against `job_posting`, run back through
+`logic/deduplicate_job_postings.py`, 75 → 71 again) with a **blocker** now defined as
+a zero-evidence technology at `REQUIRED` or `PREFERRED` strength, not any mention.
+
+### Scala, resolved
+
+| | count | REQUIRED | PREFERRED | MENTIONED | REQUIRED+PREFERRED share |
+|---|--:|--:|--:|--:|--:|
+| dbt | 35 | 14 | 10 | 11 | **69%** |
+| Databricks | 21 | 8 | 5 | 8 | 62% |
+| Snowflake | 27 | 12 | 2 | 13 | 52% |
+| Kafka | 10 | 4 | 3 | 3 | 70% (small n) |
+| Terraform | 10 | 2 | 4 | 4 | 60% (small n) |
+| Java | 6 | 2 | 1 | 3 | 50% (small n) |
+| **Scala** | **27** | **6** | **2** | **19** | **30%** |
+| BigQuery | 12 | 4 | 0 | 8 | 33% |
+
+Scala's raw frequency (27 of 71, third-most-mentioned) is confirmed to have been
+misleading: 19 of those 27 mentions (70%) are `MENTIONED`-only — one line in a stack
+list — not an actual requirement. Its `REQUIRED`+`PREFERRED` count (8) is barely above
+Kafka (7) and Terraform (6), and well below dbt (24), Databricks (13), and Snowflake
+(14). **The earlier flag is resolved: Scala is a real but moderate-priority gap, not
+a top-tier one.** `candidate.yaml`'s own filing of it under
+`lower_priority_for_immediate_search` alongside Terraform/Kubernetes/Kafka turns out
+to be right, not a presentation risk — the market data now agrees rather than
+just being silent on it.
+
+### Updated learning ROI ranking (by REQUIRED+PREFERRED count, i.e. real signal, not raw mentions)
+
+1. **dbt — still highest leverage, more confidently now.** 24 of 35 mentions are
+   actual requirements (69%), the highest rate of any zero-evidence technology, not
+   just the highest raw count.
+2. **Databricks — moves up.** 13 of 21 (62%) are real requirements — higher-rate than
+   Snowflake, contrary to the previous pass's "lower leverage than raw frequency
+   suggests" call. Revise that: Databricks was actually under-rated before, not
+   over-rated — the earlier caveat assumed most mentions were incidental stack-list
+   noise, which strength data shows isn't true here.
+3. **Snowflake — still real, still largely redundant with BigQuery** for the postings
+   that need a warehouse platform at all; 14 of 27 (52%) required/preferred.
+4. **Scala — moderate, not urgent.** 8 of 27 (30%) required/preferred — worth learning
+   eventually (roughly Kafka/Terraform tier), not a near-term blocker the way dbt is.
+5. **BigQuery — leverage claim softens.** Only 4 of 12 mentions (33%) are actual
+   requirements, and per the family breakdown below, BigQuery's zero-evidence weight
+   in Analytics Engineer/Data Platform postings isn't the deciding disqualifier there
+   — those families are closed off by years/seniority language, not by BigQuery
+   specifically. Still the sensible warehouse entry point given existing GCP
+   operational evidence, but "opens Analytics Engineer and Data Platform" (previous
+   pass's claim) doesn't hold up: see below.
+
+### Recommendation distribution, recomputed
+
+Same mechanical rule as the original pass, blocker definition changed from "any
+mention of a zero-evidence technology" to "REQUIRED or PREFERRED only." (Recomputed
+fresh against the same written rule, not a byte-for-byte replay of the original
+one-off script — that script was never preserved as code, same caveat this document
+already carries for the market-tier reconstruction.)
+
+| Recommendation | n | Share |
+|---|--:|--:|
+| APPLY | 12 | 17% |
+| APPLY-STRETCH | 15 | 21% |
+| LOW PRIORITY | 9 | 13% |
+| SKIP | 35 | 49% |
+
+**38% (27 of 71) are now apply-now candidates**, up from 25% (18 of 71) under
+bare-mention blockers. This is not the market getting easier — it's the previous
+number being an underestimate, because most zero-evidence "blockers" it counted
+weren't actually required. The SKIP share also rose (30 → 35): postings with genuine
+`REQUIRED`/`PREFERRED` zero-evidence blockers alongside real strong-technology overlap
+sort more decisively into SKIP now, instead of landing in the middle bands on raw
+mention count alone.
+
+By family, most of the shift lands in Data Engineer (APPLY 4→10, STRETCH 11→12, LOW
+17→5, SKIP 17→22 — same underlying pattern: sharper separation now that mentions and
+requirements are told apart). Two family-level findings from the original pass need
+correction:
+
+- **Data Platform's 4/4 SKIP is confirmed, but for a different, more solid reason
+  than assumed.** All four postings' SKIP verdict traces to `years_experience_required
+  = 5` (three postings) or a "Senior" title (the fourth) — not to zero-evidence tech
+  blockers at all. The strength data doesn't change this family's outcome; it
+  independently confirms it wasn't actually about the tech gap. **Correction to the
+  previous pass's Learning-ROI claim:** BigQuery/Databricks would not open these four
+  postings even at full strength, because seniority/years is the disqualifier, not
+  the tech stack.
+- **Analytics Engineer is less closed than the original framing suggested.** Was 0
+  APPLY / 0 STRETCH / 2 LOW / 4 SKIP; now 1 APPLY / 1 STRETCH / 0 LOW / 4 SKIP. Two
+  of the six postings ("Analytics Engineer till UR i Stockholm," "Analytics Engineer,
+  Finance") have dbt/Snowflake/BigQuery at `MENTIONED` only, not `REQUIRED` — the
+  candidate's dbt=0 evidence isn't actually disqualifying for those two specific
+  postings. The other 4 SKIPs are still title/years-driven (3 "Senior"-titled, one
+  with `years=5`), same as Data Platform above. **Revised finding: Analytics Engineer
+  is thin, not closed** — real but limited volume, consistent with (not contradicting)
+  `candidate.yaml`'s dbt=0 gap, just less absolute than "4 of 6 SKIP, zero APPLY/STRETCH"
+  implied.
+
+### What this confirms about the earlier CI/CD caveat
+
+Unchanged and still worth restating: CI/CD ownership remains un-auditable against this
+extractor (`extract_technologies_mentioned.py` has no CI/CD keyword vocabulary at
+all). Requirement-strength doesn't help here — it operates on technologies the
+extractor already matches, and CI/CD tools aren't in that list. Still an open
+extraction gap, not resolved by this pass.
+
 ## Caveats carried over
 
 - Years-required is stated in only 15 of 71 postings — most APPLY/STRETCH

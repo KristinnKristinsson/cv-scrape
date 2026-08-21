@@ -381,3 +381,16 @@ once and the real shape of the data is known, not before.
   a learning-ROI ranking. Also identifies the next concrete build (requirement-
   strength extraction) as the one that would most improve this analysis, ahead of
   generalizing it into `evaluate_candidate_against_job()`.
+- Requirement-strength extraction: built (2026-08-21) —
+  `logic/classify_technology_requirement_strength.py`, wired through the
+  `[SIGNALS]` vertical, `extract-signals` re-run over the full stored sample. Steps
+  6/7 revisited in `Candidate Placement Findings.md` using it: the Scala flag is
+  resolved (30% REQUIRED+PREFERRED vs. dbt's 69% — a real but moderate gap, not a
+  top-tier one, confirming `candidate.yaml`'s own low-priority filing of it),
+  Databricks' leverage was previously under-rated, and Data Platform/Analytics
+  Engineer's closed-off verdicts were re-derived: Data Platform's SKIPs are
+  seniority/years-driven (tech-independent), Analytics Engineer is thinner than
+  "closed" implied (2 of 6 postings only mention, don't require, the dbt/Snowflake
+  gap). CI/CD ownership remains un-auditable — out of scope for this build, needs a
+  separate extraction-vocabulary fix. `evaluate_candidate_against_job()` is now
+  unblocked as the next generalization step, not yet started.
