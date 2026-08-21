@@ -4,7 +4,7 @@ against Arbetsförmedlingen's public JobSearch API, paginating until the API's o
 logic/classify_fetch_status.py, logic/compute_published_after_minutes.py, and
 logic/decide_pagination_action.py already returned.
 
-This bypasses the spider/WAF path entirely: the API is documented, keyless, and
+This skips the spider/WAF-handling path entirely: the API is documented, keyless, and
 first-party (see data/probes/arbetsformedlingen.se/report.md) — none of the
 robots/rate-limit/WAF-countermeasure machinery built for scraped HTML applies to
 calling it. Still reuses fetch_page_raw and receive_fetch_response as-is: a plain

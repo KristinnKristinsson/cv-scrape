@@ -37,7 +37,7 @@ _BACKEND_TITLE_MARKERS = ("backend", "back-end")
 # the posting shows an actual data-handling responsibility, not just the title word.
 # Deliberately specific, not bare "data" or "analytics" — a first pass using those
 # matched almost every posting (game studios included) on incidental mentions like
-# "player data" or GDPR boilerplate, defeating the boundary rule entirely.
+# "player data" or GDPR boilerplate, making the boundary rule ineffective.
 _DATA_HANDLING_HINTS = (
     "etl",
     "data pipeline",

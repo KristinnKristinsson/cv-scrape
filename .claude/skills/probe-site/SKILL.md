@@ -78,7 +78,7 @@ implements (`cv_scrape probe`).
 - Don't increase `--pages` or re-run the probe repeatedly against the same site to
   "get more signal" — the small paced sample is deliberate, to avoid tripping the
   exact WAF being characterized or burning the site before real scraping starts.
-- Don't attempt to bypass or defeat a detected WAF/challenge — this skill is for
-  reconnaissance and recommendation, not evasion.
+- Treat a detected WAF/challenge as a stop signal, not something to work around —
+  this skill investigates and recommends, nothing more.
 - Don't scrape a path robots.txt disallows just because the probe reported it;
   surface it and let the human decide.

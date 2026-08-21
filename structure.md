@@ -13,7 +13,7 @@ user's own CV, (3) score/match postings against it, (4) persist results for quer
 See `Objectives.md` for *why* — the market-benchmark methodology this pipeline exists
 to serve, and where steps 3–4 above still fall short of it.
 
-Some target sites run WAF/bot challenges. The intent is to defeat them later —
+Some target sites run WAF/bot challenges. The intent is to handle them gracefully later —
 without external proxies or third-party anti-bot services — but that logic is
 **not built yet**. The module boundaries below exist so rate limiting, backoff/retry,
 header/UA rotation, response challenge-classification, and cookie/session continuity
