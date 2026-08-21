@@ -39,11 +39,19 @@ _TECHNOLOGY_TO_CAPABILITY = {
     "bitbucket pipelines": "CI_CD",
     "teamcity": "CI_CD",
     "bamboo": "CI_CD",
+    "mongodb": "MongoDB",
+    "sql server": "SQL_Server_TSQL",
+    "mssql": "SQL_Server_TSQL",
 }
 # Deliberately absent, not an omission: scala, kafka, snowflake, databricks,
-# bigquery, redshift, hadoop, .net, django, aws — candidate.yaml lists no matching
-# capability for any of these. Falling through to None for them is the correct,
-# deliberate answer, not a gap to fill in later.
+# bigquery, redshift, hadoop, .net, django, aws, power bi, powerbi, looker,
+# tableau, oracle, redis, fivetran, matillion, ssis, azure data factory, azure
+# synapse, synapse, delta lake, iceberg, flink, graphql, typescript, lambda, glue,
+# grafana — candidate.yaml lists no matching capability for any of these. Falling
+# through to None for them is the correct, deliberate answer, not a gap to fill in
+# later: extract_technologies_mentioned.py still records them (so job_signals stays
+# a faithful read of what a posting asks for), they just never enter a fit
+# evaluation's overlap/blocker counts, same as any other unmapped technology.
 #
 # The CI/CD-tool entries above all collapse to the same "CI_CD" capability name
 # deliberately — candidate.yaml grades CI/CD as one ownership-experience capability,

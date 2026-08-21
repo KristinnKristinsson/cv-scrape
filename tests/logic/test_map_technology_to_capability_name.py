@@ -36,6 +36,9 @@ from cv_scrape.logic.map_technology_to_capability_name import map_technology_to_
         ("bitbucket pipelines", "CI_CD"),
         ("teamcity", "CI_CD"),
         ("bamboo", "CI_CD"),
+        ("mongodb", "MongoDB"),
+        ("sql server", "SQL_Server_TSQL"),
+        ("mssql", "SQL_Server_TSQL"),
     ],
 )
 def test_known_technologies_map_to_capability_name(technology, expected):
@@ -44,7 +47,38 @@ def test_known_technologies_map_to_capability_name(technology, expected):
 
 @pytest.mark.parametrize(
     "technology",
-    ["scala", "kafka", "snowflake", "databricks", "bigquery", "redshift", "hadoop", ".net", "django", "aws"],
+    [
+        "scala",
+        "kafka",
+        "snowflake",
+        "databricks",
+        "bigquery",
+        "redshift",
+        "hadoop",
+        ".net",
+        "django",
+        "aws",
+        "power bi",
+        "powerbi",
+        "looker",
+        "tableau",
+        "oracle",
+        "redis",
+        "fivetran",
+        "matillion",
+        "ssis",
+        "azure data factory",
+        "azure synapse",
+        "synapse",
+        "delta lake",
+        "iceberg",
+        "flink",
+        "graphql",
+        "typescript",
+        "lambda",
+        "glue",
+        "grafana",
+    ],
 )
 def test_technologies_with_no_matching_capability_map_to_none(technology):
     assert map_technology_to_capability_name(technology) is None

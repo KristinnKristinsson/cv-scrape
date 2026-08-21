@@ -423,3 +423,47 @@ the gap itself is now auditable, which is what was actually missing:
   already correctly filed as an *experience* gap, not a capability gap — this pass
   confirms that filing was right, it just couldn't be checked against real postings
   before now.
+
+## Fourth revisit: broader keyword-coverage gap (2026-08-21, continued)
+
+`Objectives.md`'s step-3 note flagged the technology keyword list as a first pass
+worth revisiting once step 4/5 showed which coverage gaps actually mattered — now
+done, over the same curated 71-posting sample.
+
+**Method:** rather than guessing plausible tool names, checked candidate.yaml-adjacent
+and generally common data/BI/warehouse terms against the actual stored descriptions,
+snippet by snippet, before adding anything — the same discipline the original
+"data"/"analytics" role-family mistake should have used from the start.
+
+**Rejected, not added:** `rust`, `go`, `sap`, `excel`, `nifi` — each looked plausible
+going in, but inspection showed they were near-total false-positive traps as bare
+substrings on this sample: "rust" matched "trust"/"trusted" (5 of 6 hits), "excel"
+matched "excellent"/"excellence" (7 of 7 hits), "nifi" matched "significant" (3 of 3
+hits), "sap" matched "ASAP" (1 of 2 hits, the other a false "systemutvecklare... ASAP"
+coincidence), "go" matched "go deep" once and Rust/Go the language once. None had
+enough genuine signal (0-1 true hits each) to justify what a bare-word marker would
+misclassify elsewhere in the sample.
+
+**Added, verified clean:** Power BI, Looker, Tableau, SQL Server/MSSQL, Oracle,
+MongoDB, Redis, Fivetran, Matillion, SSIS, Azure Data Factory, Azure Synapse, Delta
+Lake, Iceberg, Flink, GraphQL, TypeScript, Lambda, Glue, Grafana — all 100%
+true-positive on manual inspection of every match in the curated sample.
+
+**The consequential finding:** two of these — MongoDB and SQL Server — are
+capabilities `candidate.yaml` actually grades (`MongoDB` level 2.5, `SQL_Server_TSQL`
+level 1.5). Neither had ever been extracted before this fix, meaning real existing
+candidate evidence for both was completely absent from every prior fit evaluation in
+this document, not merely under-counted the way Scala/Databricks were. Re-running
+`extract-signals`/`evaluate`: recommendation counts are unchanged (both capabilities
+sit in the same sub-`STRONG` `PARTIAL` band CI_CD occupies, so neither becomes a
+blocker or a strong match), but MongoDB now surfaces as a `PARTIAL` match in 1 of 71
+curated postings and SQL_Server_TSQL in 8 of 71 — real signal that simply wasn't
+visible to this analysis before now.
+
+The remaining additions (Power BI, Looker, Tableau, Oracle, Redis, Fivetran,
+Matillion, SSIS, Azure Data Factory/Synapse, Delta Lake, Iceberg, Flink, GraphQL,
+TypeScript, Lambda, Glue, Grafana) have no matching `candidate.yaml` capability and
+stay unmapped by design, same as the pre-existing Scala/Kafka/Snowflake precedent —
+they now populate `job_signals.technologies` for visibility (e.g. a future
+"modern BI/warehouse stack" market-shape read, alongside the existing
+dbt/Snowflake/Databricks one), but don't move any fit evaluation.

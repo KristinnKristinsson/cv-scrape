@@ -426,3 +426,26 @@ once and the real shape of the data is known, not before.
   never a blocker, confirming `candidate.yaml`'s own filing of it as an
   experience-depth gap rather than a capability gap. See `Candidate Placement
   Findings.md`'s "Third revisit" section.
+- Broader technology-keyword-list revisit: done (2026-08-21), per this document's own
+  step-3 note that the list "should be revisited once step 4/5 reveal which gaps in
+  coverage actually matter." Checked candidate genuinely-missed terms against the
+  curated 71-posting sample, snippet by snippet, before adding any of them —
+  `extract_technologies_mentioned.py` now also tracks Power BI, Looker, Tableau, SQL
+  Server/MSSQL, Oracle, MongoDB, Redis, Fivetran, Matillion, SSIS, Azure Data
+  Factory/Synapse, Delta Lake, Iceberg, Flink, GraphQL, TypeScript, Lambda, Glue, and
+  Grafana. Five plausible candidates (`rust`, `go`, `sap`, `excel`, `nifi`) were
+  checked and rejected as bare-word false-positive traps on the real sample
+  ("trusted"/"trust" for rust, "excellent"/"excellence" for excel, "significant" for
+  nifi, "ASAP" for sap) — same lesson as the original "data"/"analytics" role-family
+  hint-list mistake, not re-learned the hard way this time. **Two of the additions
+  are real `candidate.yaml` capabilities (`MongoDB`, `SQL_Server_TSQL`) that had zero
+  extraction coverage before this fix** — meaning existing candidate evidence for
+  both was silently absent from every fit evaluation to date, not merely
+  under-counted. `extract-signals`/`evaluate` re-run: recommendation counts unchanged
+  (14/23/12/22 — both capabilities sit in the same sub-`STRONG` partial band as
+  CI_CD), but MongoDB now shows a `PARTIAL` match in 1 of 71 postings and
+  SQL_Server_TSQL in 8 of 71 — real, previously-invisible evidence now counted. The
+  remaining additions (Power BI, Looker, Tableau, ...) have no matching
+  `candidate.yaml` capability and stay unmapped by design, same as the pre-existing
+  Scala/Kafka/Snowflake precedent — they populate `job_signals` for visibility, not
+  fit evaluation.
