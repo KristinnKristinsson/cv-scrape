@@ -20,20 +20,6 @@ CREATE TABLE IF NOT EXISTS job_posting (
     last_fetched_at TEXT
 );
 
-CREATE TABLE IF NOT EXISTS cv (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    raw_text TEXT NOT NULL,
-    skills TEXT NOT NULL,
-    titles_held TEXT NOT NULL,
-    years_experience REAL
-);
-
-CREATE TABLE IF NOT EXISTS match_score (
-    job_url TEXT PRIMARY KEY REFERENCES job_posting(url),
-    score REAL NOT NULL,
-    reasons TEXT NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS fetch_watermark (
     query_key TEXT PRIMARY KEY,
     last_run_at TEXT NOT NULL
@@ -51,7 +37,23 @@ CREATE TABLE IF NOT EXISTS job_signals (
     years_experience_required REAL,
     salary_mentioned TEXT
 );
+
+CREATE TABLE IF NOT EXISTS candidate_fit_evaluation (
+    job_url TEXT PRIMARY KEY REFERENCES job_posting(url),
+    role_family TEXT NOT NULL,
+    recommendation TEXT NOT NULL,
+    strong_matches TEXT NOT NULL,
+    blockers TEXT NOT NULL,
+    partial_matches TEXT NOT NULL,
+    reasons TEXT NOT NULL
+);
 """
+
+# Tables from a superseded generic CV-matching vertical, replaced by candidate.yaml +
+# evaluate_candidate_against_job.py — dropped here (not just removed from SCHEMA
+# above) so the live local DB actually loses them, not just the code that wrote them.
+# Both were confirmed empty (never wired to a working flow) before removal.
+_TABLES_TO_DROP = ("cv", "match_score")
 
 # CREATE TABLE IF NOT EXISTS only covers tables missing outright — a table that
 # already existed before a column was added to SCHEMA needs that column added
@@ -67,6 +69,7 @@ def connect() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.executescript(SCHEMA)
     _add_missing_columns(conn)
+    _drop_removed_tables(conn)
     return conn
 
 
@@ -77,3 +80,8 @@ def _add_missing_columns(conn: sqlite3.Connection) -> None:
             column_name = column_def.split()[0]
             if column_name not in existing:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {column_def}")
+
+
+def _drop_removed_tables(conn: sqlite3.Connection) -> None:
+    for table in _TABLES_TO_DROP:
+        conn.execute(f"DROP TABLE IF EXISTS {table}")

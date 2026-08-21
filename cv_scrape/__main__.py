@@ -15,10 +15,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="cv_scrape")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    ingest_cv = subparsers.add_parser("ingest-cv", help="Parse and store a CV file.")
-    ingest_cv.add_argument("path", help="Path to the CV file (pdf/docx/txt).")
-
-    subparsers.add_parser("match", help="Score stored job postings against the stored CV.")
+    subparsers.add_parser("evaluate", help="Evaluate curated stored postings against candidate.yaml.")
 
     probe = subparsers.add_parser("probe", help="Investigate a site before writing a spider for it.")
     probe.add_argument("url", help="Full target URL, including scheme, e.g. https://example.com/jobs")
@@ -47,16 +44,16 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
 
-    if args.command == "ingest-cv":
-        from cv_scrape.flow.ingest_cv import ingest_cv as run_ingest_cv
+    if args.command == "evaluate":
+        from collections import Counter
 
-        run_ingest_cv(args.path)
-        return 0
+        from cv_scrape.flow.evaluate_candidate_fit import evaluate_candidate_fit
 
-    if args.command == "match":
-        from cv_scrape.flow.match_jobs_to_cv import match_jobs_to_cv
-
-        match_jobs_to_cv()
+        evaluations = evaluate_candidate_fit()
+        counts = Counter(e.recommendation for e in evaluations)
+        print(f"Evaluated {len(evaluations)} curated job posting(s) against candidate.yaml.")
+        for tag in ("APPLY", "APPLY_STRETCH", "LOW_PRIORITY", "SKIP"):
+            print(f"  {tag}: {counts.get(tag, 0)}")
         return 0
 
     if args.command == "probe":
