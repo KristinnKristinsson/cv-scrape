@@ -414,3 +414,15 @@ once and the real shape of the data is known, not before.
   confirmed-empty `cv`/`match_score` SQLite tables. Closed a standing gap along the
   way: `logic/deduplicate_job_postings.py` (built in step 4, never wired past a
   one-off scratch script) now has its first real `flow/` caller.
+- CI/CD ownership extraction gap: fixed (2026-08-21) — added named CI/CD tools and
+  generic CI/CD phrasing to `extract_technologies_mentioned.py`'s keyword list, all
+  mapped to one `CI_CD` capability in `map_technology_to_capability_name.py`. No new
+  logic piece needed: same technology-mention + requirement-strength determination
+  every other technology already gets, so the fix was a vocabulary extension, not a
+  bespoke detector. `extract-signals`/`evaluate` re-run over the stored sample:
+  recommendation counts unchanged (14/23/12/22, per above) since `candidate.yaml`'s
+  `CI_CD` level (1.5) sits above the zero-evidence blocker threshold, but the gap is
+  now auditable — CI/CD lands as a `PARTIAL` match in 32 of 71 curated postings (45%),
+  never a blocker, confirming `candidate.yaml`'s own filing of it as an
+  experience-depth gap rather than a capability gap. See `Candidate Placement
+  Findings.md`'s "Third revisit" section.

@@ -13,3 +13,15 @@ def test_matches_known_technologies():
 
 def test_no_matches_returns_empty_tuple():
     assert extract_technologies_mentioned(_job("We value teamwork and communication.")) == ()
+
+
+def test_matches_named_cicd_tools():
+    # "git" also matches here as a substring of "GitHub" — a pre-existing quirk of
+    # substring matching, not introduced by the ci/cd keywords.
+    signals = extract_technologies_mentioned(_job("You'll own our Jenkins and GitHub Actions pipelines."))
+    assert set(signals) == {"jenkins", "github actions", "git"}
+
+
+def test_matches_generic_cicd_phrasing_without_a_named_tool():
+    signals = extract_technologies_mentioned(_job("Experience with CI/CD and continuous delivery is expected."))
+    assert set(signals) == {"ci/cd", "continuous delivery"}

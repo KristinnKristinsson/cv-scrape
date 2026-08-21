@@ -99,12 +99,9 @@ gap, evidence gap, or presentation gap.
   - **Databricks** — 0 evidence, blocker in 12 of 41 (29%), usually alongside Spark
     and Scala rather than standalone.
 - **Unresolved / not auditable against this sample:**
-  - **CI/CD ownership** — `candidate.yaml` lists this as a high-priority gap, but
-    `extract_technologies_mentioned.py`'s keyword vocabulary doesn't track CI/CD tools
-    at all (no "GitHub Actions," "GitLab CI," "Jenkins," etc. in its list). This claim
-    is currently un-auditable against real postings — not confirmed, not refuted. Real
-    limitation of the current extraction, worth fixing before leaning on this gap
-    further.
+  - **CI/CD ownership** — was un-auditable against real postings at the time this
+    section was written; resolved by the extraction-vocabulary fix below (see "Third
+    revisit").
   - **Scala** — see "What this reveals for what to build next" below; frequency alone
     overstates this as a gap without requirement-strength data.
 - **No presentation gaps stood out as decisive** in this pass — the disqualifying
@@ -298,11 +295,11 @@ correction:
 
 ### What this confirms about the earlier CI/CD caveat
 
-Unchanged and still worth restating: CI/CD ownership remains un-auditable against this
-extractor (`extract_technologies_mentioned.py` has no CI/CD keyword vocabulary at
-all). Requirement-strength doesn't help here — it operates on technologies the
-extractor already matches, and CI/CD tools aren't in that list. Still an open
-extraction gap, not resolved by this pass.
+Unchanged at the time this section was written: CI/CD ownership remained un-auditable
+against this extractor (`extract_technologies_mentioned.py` had no CI/CD keyword
+vocabulary at all). Requirement-strength didn't help here — it operates on
+technologies the extractor already matches, and CI/CD tools weren't in that list.
+Resolved in the "Third revisit" section below.
 
 ## Second revisit: evaluate_candidate_against_job() built (2026-08-21, continued)
 
@@ -387,3 +384,42 @@ not the requirement-strength data itself.
 - This is one snapshot (2026-08-20 collection, `candidate.yaml` v2026-08-21). No
   trend claim is made here — that needs the "never overwrite a scrape" collection
   discipline the design discussion proposed, which isn't built yet.
+
+## Third revisit: CI/CD extraction-vocabulary fix (2026-08-21, continued)
+
+Closes the CI/CD gap both earlier passes flagged as un-auditable. Added named CI/CD
+tools (GitHub Actions, GitLab CI, CircleCI, Jenkins, Azure DevOps, ArgoCD, Bitbucket
+Pipelines, TeamCity, Bamboo) plus generic phrasing ("CI/CD", "continuous
+integration/deployment/delivery") to `extract_technologies_mentioned.py`'s keyword
+list, all mapped to a single `CI_CD` capability in
+`map_technology_to_capability_name.py` — one capability, not one per tool, since
+`candidate.yaml` grades CI/CD as one ownership-experience capability regardless of
+which tool a posting names. No new logic piece: this is the same technology-mention +
+requirement-strength determination every other technology already gets, so extending
+the two existing vocabularies was the right fix per `Behavioral Architecture.md`'s
+"one rule" (same determination, no caller-selecting flag needed) — not a bespoke
+`detect_cicd_requirement.py`.
+
+Re-ran `extract-signals` and `evaluate` over the same stored sample. Recommendation
+counts are **unchanged** (14 APPLY / 23 APPLY_STRETCH / 12 LOW_PRIORITY / 22 SKIP) —
+expected, since `candidate.yaml`'s `CI_CD` capability is graded `level_0_to_5: 1.5`,
+above the zero-evidence threshold (`classify_candidate_capability_strength.py`'s
+`_ZERO_LEVEL_THRESHOLD = 1.0`), so it can only ever land as `PARTIAL`, never a
+`blocker` — a partial match doesn't move a recommendation the way a blocker does. But
+the gap itself is now auditable, which is what was actually missing:
+
+- CI/CD tooling (named or generic) appears at `REQUIRED`/`PREFERRED` strength in the
+  raw 1,320-row collected set 361 times; the once-invisible signal is real and common,
+  not rare.
+- Across the curated 71: **CI/CD lands as a `PARTIAL` capability match in 32 of 71
+  postings (45%)**, `STRONG` in 0, and — because `candidate.yaml`'s own level (1.5)
+  keeps it above zero — **never a blocker**. This confirms `candidate.yaml`'s own
+  framing of CI/CD as an *experience-depth* gap ("has interacted/fiddled with CI/CD
+  but has not designed one from scratch") rather than a *capability* gap like dbt
+  (0 evidence, frequently a hard blocker) — the market data now backs that
+  self-assessment instead of leaving it unverified.
+- Net effect on the earlier findings: the CI/CD caveat is resolved, not overturned.
+  `current_major_gaps.high_priority`'s "CI/CD ownership" entry in `candidate.yaml` was
+  already correctly filed as an *experience* gap, not a capability gap — this pass
+  confirms that filing was right, it just couldn't be checked against real postings
+  before now.

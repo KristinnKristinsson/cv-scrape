@@ -30,6 +30,19 @@ _TECHNOLOGY_KEYWORDS = (
     ".net",
     "c#",
     "django",
+    "ci/cd",
+    "continuous integration",
+    "continuous deployment",
+    "continuous delivery",
+    "github actions",
+    "gitlab ci",
+    "circleci",
+    "jenkins",
+    "azure devops",
+    "argocd",
+    "bitbucket pipelines",
+    "teamcity",
+    "bamboo",
 )
 
 
