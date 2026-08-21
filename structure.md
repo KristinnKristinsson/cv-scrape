@@ -84,6 +84,7 @@ cv-scrape/
 │   │   ├── extract_same_domain_links.py [PROBE]    # body in hand → a few same-domain URLs for the sample
 │   │   ├── detect_rate_limit_signal.py  [PROBE]    # one status+headers in hand → hit/Retry-After
 │   │   ├── summarize_rate_limit_signals.py [PROBE] # a probe run's signals in hand → RateLimitFindings
+│   │   ├── assemble_probe_sample.py     [PROBE]    # a fetch outcome + tag in hand → ProbeSample; one piece, reused for raw/rendered/extra-link fetches
 │   │   ├── classify_role_family.py     [SIGNALS]   # JobPosting in hand → RoleFamily tag
 │   │   ├── classify_seniority.py       [SIGNALS]   # JobPosting + years-required in hand → SeniorityTag
 │   │   ├── classify_company_type.py    [SIGNALS]   # JobPosting in hand → CompanyType tag
@@ -202,6 +203,7 @@ documented public API, proposing selectors from the saved markup).
 | JS-requirement | `logic/compare_raw_vs_rendered.py` | pure diff over the raw body and rendered body already in hand |
 | Sample expansion | `logic/extract_same_domain_links.py` | pure decision over an already-fetched body, keeps the "small multi-page sample" bounded and same-domain |
 | Rate-limit signal | `logic/detect_rate_limit_signal.py` (per request), `logic/summarize_rate_limit_signals.py` (reduced across the run) | keeps `flow/probe_site.py` from inspecting raw status/headers itself to reach a determination |
+| Sample assembly | `logic/assemble_probe_sample.py` → `state/probe_sample.py` | fetched-or-failed + tag already in hand → `ProbeSample`; one piece, called for the raw fetch, the rendered fetch, and each same-domain extra-link fetch — same determination regardless of which of the three call sites it serves, per the one rule's second consequence |
 | Persistence | `effect/save_site_profile.py` → `data/probes/<domain>/<run_id>/profile.json` + `raw/`, `rendered/` HTML snapshots | investigation output, not scrape results — files, not the SQLite store, so the skill and the user can read it directly. Deliberately not a convergent upsert like the SQLite writers: see Ambiguous Call #6. |
 | Sequencing | `flow/probe_site.py` | robots.txt first (stops sampling further if disallowed, still saves what was gathered) → small paced sample, raw + rendered → assemble `state/site_profile.py` → save |
 
@@ -335,7 +337,17 @@ thing, per this repo's own no-dead-code convention.
   watermark, plus a clock-skew safety margin, already-in-hand values in → a
   determination out), and `logic/decide_pagination_action.py` (offset vs. the API's
   `total`, and whether the page came back empty, → `CONTINUE`/`STOP`); the flow only
-  routes on the tags.
+  routes on the tags. Incremental re-fetching adds one more state/observation/effect
+  trio, same reify shape as the WAF stubs: `state/fetch_watermark.py`
+  (`FetchWatermark`: the query's own filter signature + when it last completed a
+  full run — mirrors `state/session.py`'s per-domain shape, one level more
+  specific), `observation/read_fetch_watermark.py` (read our own stored watermark
+  unchanged, mirrors `read_session_state.py`), and `effect/save_fetch_watermark.py`
+  (convergent upsert, same shape as `save_job_posting.py`). `flow/fetch_jobs_from_api.py`
+  reads the watermark before paginating, feeds it into
+  `compute_published_after_minutes.py`, and saves a fresh one only after the run
+  completes — a decision no single piece owns, visible only by reading the flow (see
+  Flow — the altitude, and its body).
 - **Job scraping: jobbsafari.se**: probing this domain
   (`data/probes/jobbsafari.se/report.md`) found no API (the site's own internal API is
   robots-disallowed), `STATIC_OK` HTML, and — critically — a complete `JobPosting`

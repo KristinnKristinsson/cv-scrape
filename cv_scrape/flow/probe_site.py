@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 
 from cv_scrape.effect.save_site_profile import save_site_profile
 from cv_scrape.interaction.receive_fetch_response import RejectedResponse, receive_fetch_response
+from cv_scrape.logic.assemble_probe_sample import assemble_probe_sample
 from cv_scrape.logic.classify_response import classify_response
 from cv_scrape.logic.compare_raw_vs_rendered import JsRequirement, compare_raw_vs_rendered
 from cv_scrape.logic.detect_framework_signals import detect_framework_signals
@@ -68,14 +69,14 @@ def probe_site(target_url: str, pages: int = DEFAULT_SAMPLE_PAGES) -> None:
 
         raw_result = fetch_page_raw(target_url)
         raw_accepted_body: bytes | None = None
+        raw_tag_name = None
         if isinstance(raw_result, RawFetchResult):
             raw_bodies.append(raw_result.body)
             rate_limit_signals.append(detect_rate_limit_signal(raw_result.status, raw_result.headers))
 
-            tag_name = None
             try:
                 envelope = receive_fetch_response(raw_result.url, raw_result.status, raw_result.headers, raw_result.body)
-                tag_name = classify_response(envelope).name
+                raw_tag_name = classify_response(envelope).name
                 waf_vendor = detect_waf_vendor(envelope).name
                 framework = detect_framework_signals(envelope)
                 structured_data = discover_structured_data(envelope)
@@ -83,70 +84,26 @@ def probe_site(target_url: str, pages: int = DEFAULT_SAMPLE_PAGES) -> None:
             except RejectedResponse:
                 pass
 
-            samples.append(
-                ProbeSample(
-                    url=raw_result.url,
-                    renderer="raw",
-                    fetched=True,
-                    status=raw_result.status,
-                    response_tag=tag_name,
-                    elapsed_ms=raw_result.elapsed_ms,
-                    error=None,
-                )
-            )
-        else:
-            samples.append(
-                ProbeSample(
-                    url=target_url,
-                    renderer="raw",
-                    fetched=False,
-                    status=None,
-                    response_tag=None,
-                    elapsed_ms=None,
-                    error=raw_result.reason,
-                )
-            )
+        samples.append(assemble_probe_sample("raw", raw_result, raw_tag_name))
 
         time.sleep(delay)
 
         rendered_result = fetch_page_rendered(target_url)
         rendered_accepted_body: bytes | None = None
+        rendered_tag_name = None
         if isinstance(rendered_result, RenderedFetchResult):
             rendered_bodies.append(rendered_result.body)
 
-            tag_name = None
             try:
                 envelope = receive_fetch_response(
                     rendered_result.url, rendered_result.status, rendered_result.headers, rendered_result.body
                 )
-                tag_name = classify_response(envelope).name
+                rendered_tag_name = classify_response(envelope).name
                 rendered_accepted_body = envelope.body
             except RejectedResponse:
                 pass
 
-            samples.append(
-                ProbeSample(
-                    url=rendered_result.url,
-                    renderer="rendered",
-                    fetched=True,
-                    status=rendered_result.status,
-                    response_tag=tag_name,
-                    elapsed_ms=rendered_result.elapsed_ms,
-                    error=None,
-                )
-            )
-        else:
-            samples.append(
-                ProbeSample(
-                    url=target_url,
-                    renderer="rendered",
-                    fetched=False,
-                    status=None,
-                    response_tag=None,
-                    elapsed_ms=None,
-                    error=rendered_result.reason,
-                )
-            )
+        samples.append(assemble_probe_sample("rendered", rendered_result, rendered_tag_name))
 
         js_requirement = compare_raw_vs_rendered(raw_accepted_body, rendered_accepted_body).name
 
@@ -155,42 +112,20 @@ def probe_site(target_url: str, pages: int = DEFAULT_SAMPLE_PAGES) -> None:
             time.sleep(delay)
 
             extra_result = fetch_page_raw(link)
+            extra_tag_name = None
             if isinstance(extra_result, RawFetchResult):
                 raw_bodies.append(extra_result.body)
                 rate_limit_signals.append(detect_rate_limit_signal(extra_result.status, extra_result.headers))
 
-                tag_name = None
                 try:
                     envelope = receive_fetch_response(
                         extra_result.url, extra_result.status, extra_result.headers, extra_result.body
                     )
-                    tag_name = classify_response(envelope).name
+                    extra_tag_name = classify_response(envelope).name
                 except RejectedResponse:
                     pass
 
-                samples.append(
-                    ProbeSample(
-                        url=extra_result.url,
-                        renderer="raw",
-                        fetched=True,
-                        status=extra_result.status,
-                        response_tag=tag_name,
-                        elapsed_ms=extra_result.elapsed_ms,
-                        error=None,
-                    )
-                )
-            else:
-                samples.append(
-                    ProbeSample(
-                        url=link,
-                        renderer="raw",
-                        fetched=False,
-                        status=None,
-                        response_tag=None,
-                        elapsed_ms=None,
-                        error=extra_result.reason,
-                    )
-                )
+            samples.append(assemble_probe_sample("raw", extra_result, extra_tag_name))
 
     rate_limit = summarize_rate_limit_signals(rate_limit_signals)
 
