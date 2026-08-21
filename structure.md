@@ -420,8 +420,10 @@ thing, per this repo's own no-dead-code convention.
 - **Dependency/env management**: `uv` with `pyproject.toml`. Core deps: `scrapy`,
   `httpx` (raw probe fetches), `playwright` (rendered probe fetches — after `uv
   sync`, browser binaries still need `uv run playwright install chromium`, a
-  several-hundred-MB download, run manually rather than automatically). CV parsing
-  libs (`pdfplumber`, `python-docx`) get added when those stub bodies are filled in.
+  several-hundred-MB download, run manually rather than automatically). No CV
+  parsing libs — the pre-`candidate.yaml` CV-ingestion vertical that would have
+  needed them (`pdfplumber`, `python-docx`) was deleted outright, per the
+  `[FIT]` vertical section above.
 - **Persistence**: SQLite (stdlib `sqlite3`, no extra dependency) for scrape/match
   data; plain files under `data/probes/` for probe investigation output (see
   site-probing vertical above) — different data, different lifetime, not the same
