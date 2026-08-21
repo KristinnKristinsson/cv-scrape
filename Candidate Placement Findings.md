@@ -304,6 +304,77 @@ all). Requirement-strength doesn't help here — it operates on technologies the
 extractor already matches, and CI/CD tools aren't in that list. Still an open
 extraction gap, not resolved by this pass.
 
+## Second revisit: evaluate_candidate_against_job() built (2026-08-21, continued)
+
+`evaluate_candidate_against_job()` (see `Objectives.md`, `structure.md`'s `[FIT]`
+section) is now real, tested code, run via `cv_scrape evaluate` over the same 71
+curated, deduped postings both prior passes analyzed by hand/scratch script. Results:
+
+| Recommendation | n | Share |
+|---|--:|--:|
+| APPLY | 14 | 20% |
+| APPLY_STRETCH | 23 | 32% |
+| LOW_PRIORITY | 12 | 17% |
+| SKIP | 22 | 31% |
+
+**52% (37 of 71) are apply-now candidates**, up from 38% in the requirement-strength
+revisit above. This is not a third independent re-derivation confirming the same
+number — three deliberate rule changes went into the built code, distinct from
+formalizing the existing rule verbatim, and they each pushed in the same direction:
+
+1. **The years fix (the change this build was explicitly scoped around).** Both prior
+   passes used a hard `years ≥ 5 → SKIP`. `candidate.yaml`'s own text says not to:
+   "do not automatically reject a vacancy because stated years exceed the candidate's
+   chronological experience... evaluate the combination." The built code demotes the
+   recommendation by one tier instead of blocking it outright; an explicit
+   Senior/Lead/Principal *title* still hard-skips (candidate.yaml states that one
+   flatly, with no such hedge). In the real run, 7 postings were demoted this way and
+   13 were hard-skipped on title — confirming both prior passes had the title-based
+   skip right, and only the years-based one wrong.
+2. **Cloud platforms now count toward strong-technology overlap.** Neither hand pass's
+   mechanical rule ever included `cloud_platforms` in its strong-technology count —
+   only the eight bare technology keywords (Python, SQL, Airflow, Git, Linux, Docker,
+   Pandas, MySQL). The built `summarize_capability_overlap.py` also credits a
+   `STRONG`-level cloud platform (GCP, held at level 3) toward `strong_matches`, since
+   there's no principled reason real GCP evidence shouldn't count just because it
+   arrived via `cloud_platforms` rather than `technologies`. This is a genuine model
+   expansion, not a bug fix like ⇒(1) — flagged here plainly since it wasn't
+   explicitly decided in either prior pass and does move real postings.
+3. **A previously-undefined case now resolves toward APPLY-adjacent instead of SKIP.**
+   Both hand passes' prose rule was silent on "≥2 strong matches but ≥3 blockers";
+   both scratch implementations of it happened to fall through to `SKIP`. The built
+   code's decision table resolves this case to `LOW_PRIORITY` instead — still not an
+   apply-now recommendation, but one tier less severe, and the case is now decided
+   deliberately rather than by code-order accident.
+
+**Concrete illustration — Data Platform, the clearest single case:** the
+requirement-strength revisit found this family "closed" (4/4 SKIP) but attributed it
+correctly to years/title, not tech. The built code now shows **2 SKIP / 2
+APPLY_STRETCH**. The two that moved were demoted, not blocked — one had
+Airflow/Docker/Git/Python overlap, the other GCP/MySQL/Python/SQL — both real
+strong-evidence overlap that a hard years cutoff was previously discarding entirely.
+The two that stayed SKIP did so for the right, unchanged reasons: one has zero
+technology overlap at all (title `Data Platform Engineer` — every named technology
+was `MENTIONED`-only and below strong/partial thresholds), the other is explicitly
+titled `Senior Data Platform Engineer` (hard-skipped on title, independent of its
+real GCP/Python/SQL overlap).
+
+Full family breakdown from the built code, for reference:
+
+| Family | n | APPLY | STRETCH | LOW | SKIP |
+|---|--:|--:|--:|--:|--:|
+| Data Engineer | 49 | 11 | 18 | 8 | 12 |
+| ETL / Integration | 7 | 2 | 0 | 2 | 3 |
+| Data-heavy Backend | 5 | 0 | 2 | 2 | 1 |
+| Analytics Engineer | 6 | 1 | 1 | 0 | 4 |
+| Data Platform | 4 | 0 | 2 | 0 | 2 |
+
+The Scala/dbt/Databricks leverage ranking from the requirement-strength revisit is
+unaffected by any of this — that ranking is about which zero-evidence technology is
+worth learning, a question upstream of and independent from the seniority/cloud
+changes here. This pass only touches the seniority-fit and overlap-counting rules,
+not the requirement-strength data itself.
+
 ## Caveats carried over
 
 - Years-required is stated in only 15 of 71 postings — most APPLY/STRETCH

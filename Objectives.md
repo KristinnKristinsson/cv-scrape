@@ -392,5 +392,25 @@ once and the real shape of the data is known, not before.
   seniority/years-driven (tech-independent), Analytics Engineer is thinner than
   "closed" implied (2 of 6 postings only mention, don't require, the dbt/Snowflake
   gap). CI/CD ownership remains un-auditable — out of scope for this build, needs a
-  separate extraction-vocabulary fix. `evaluate_candidate_against_job()` is now
-  unblocked as the next generalization step, not yet started.
+  separate extraction-vocabulary fix.
+- `evaluate_candidate_against_job()`: built (2026-08-21) — see `structure.md`'s new
+  `[FIT]` vertical section for the file-by-file breakdown. Formalizes the mechanical
+  rule `candidate.yaml`'s `job_evaluation_guidance` already described in prose into
+  real, tested `logic/` pieces, persisted to a new `candidate_fit_evaluation` table,
+  triggered by `cv_scrape evaluate`. Fixes a real flaw both prior scratch passes had:
+  a hard `years≥5 → SKIP` cutoff, which contradicted candidate.yaml's own text
+  ("do not automatically reject a vacancy because stated years exceed the
+  candidate's chronological experience... evaluate the combination"). Years now
+  demote the recommendation by one tier instead of blocking it outright; an explicit
+  Senior/Lead/Principal title still hard-skips, per candidate.yaml's own flat
+  wording for that signal specifically. Run against the real stored sample: 71
+  curated postings → APPLY 14, APPLY_STRETCH 23, LOW_PRIORITY 12, SKIP 22 — a real
+  shift from `Candidate Placement Findings.md`'s hand-derived numbers, most visibly
+  Data Platform (was "4/4 SKIP," now 2 SKIP / 2 APPLY_STRETCH once years-only
+  disqualifications stopped being treated as hard blocks). See
+  `Candidate Placement Findings.md`'s second revisit section for the reconciliation.
+  Also retired the pre-`candidate.yaml` `ingest-cv`/`match` CLI commands and their
+  never-run `ParsedCv`/`score_match`/`MatchScore` stub vertical, including the two
+  confirmed-empty `cv`/`match_score` SQLite tables. Closed a standing gap along the
+  way: `logic/deduplicate_job_postings.py` (built in step 4, never wired past a
+  one-off scratch script) now has its first real `flow/` caller.

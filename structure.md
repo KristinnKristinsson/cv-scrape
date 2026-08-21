@@ -8,10 +8,12 @@ document with the same reasoning shape (category + one-line why) rather than gue
 
 ## What this project is
 
-A personal tool: (1) scrape job postings from various sites with Scrapy, (2) parse the
-user's own CV, (3) score/match postings against it, (4) persist results for querying.
-See `Objectives.md` for *why* — the market-benchmark methodology this pipeline exists
-to serve, and where steps 3–4 above still fall short of it.
+A personal tool: (1) scrape job postings from various sites with Scrapy, (2) extract
+inferred signals from each posting (role family, seniority, technologies, ...),
+(3) evaluate each against the candidate's own evidence-graded capability profile
+(`candidate.yaml`, gitignored — never the codebase's job to hold that data itself),
+(4) persist results for querying. See `Objectives.md` for *why* — the market-benchmark
+methodology this pipeline exists to serve.
 
 Some target sites run WAF/bot challenges. The intent is to handle them gracefully later —
 without external proxies or third-party anti-bot services — but that logic is
@@ -35,12 +37,13 @@ cv-scrape/
 ├── cv_scrape/
 │   ├── __init__.py
 │   ├── settings.py                               # Scrapy-mandated static config (exception, see notes)
-│   ├── __main__.py                               # thin CLI dispatcher → flow/* (ingest-cv, match, extract-signals)
+│   ├── __main__.py                               # thin CLI dispatcher → flow/* (evaluate, extract-signals, fetch-jobs, probe)
 │   │
 │   ├── state/
 │   │   ├── job_posting.py                        # JobPosting entity (doubles as the Scrapy Item shape)
-│   │   ├── cv.py                                 # ParsedCv entity
-│   │   ├── match_score.py                        # MatchScore entity
+│   │   ├── candidate_profile.py        [FIT]      # CandidateProfile: capabilities parsed from candidate.yaml
+│   │   ├── capability_overlap.py       [FIT]      # CapabilityOverlap: strong/blocker/partial capability names for one posting
+│   │   ├── candidate_fit_evaluation.py [FIT]      # CandidateFitEvaluation: the final recommendation + reasons
 │   │   ├── response_envelope.py                  # normalized fetch-outcome shape (status/headers/body/tag)
 │   │   ├── site_policy.py                        # per-domain config: selectors, rate-limit policy, header pool
 │   │   ├── pending_fetch.py            [WAF]      # reified retry value: url, attempt, not_before, reason
@@ -60,10 +63,14 @@ cv-scrape/
 │   │   ├── receive_fetch_response.py   [WAF]      # raw bytes/headers/status → normalized envelope, or reject
 │   │   │                                          # first real caller: flow/probe_site.py [PROBE]
 │   │   ├── parse_job_posting_html.py              # validated envelope → JobPosting, or reject-tag
-│   │   └── parse_cv_document.py                   # user's CV file (pdf/docx/txt) → ParsedCv, or reject-tag
+│   │   └── parse_candidate_profile.py  [FIT]      # user's candidate.yaml file → CandidateProfile, or reject-tag
 │   │
 │   ├── logic/
-│   │   ├── score_match.py                         # ParsedCv + JobPosting in hand → MatchScore
+│   │   ├── map_technology_to_capability_name.py [FIT] # tech/cloud keyword in hand → matching capability name, or None
+│   │   ├── classify_candidate_capability_strength.py [FIT] # capability name + CandidateProfile in hand → strong/partial/zero tag
+│   │   ├── classify_candidate_seniority_fit.py [FIT] # JobPosting + years-required in hand → SeniorityFit tag
+│   │   ├── summarize_capability_overlap.py [FIT]  # JobSignals + CandidateProfile in hand → CapabilityOverlap
+│   │   ├── evaluate_candidate_against_job.py [FIT] # JobSignals + CapabilityOverlap + SeniorityFit in hand → CandidateFitEvaluation
 │   │   ├── classify_response.py        [WAF]       # envelope in hand → ok/challenge/blocked/unknown tag
 │   │   │                                           # implemented; first real caller: flow/probe_site.py [PROBE]
 │   │   ├── decide_retry_action.py      [WAF]       # PendingFetch + now → retry-now/wait/abandon tag
@@ -92,16 +99,15 @@ cv-scrape/
 │   │   ├── read_clock.py               [WAF]       # implemented; first real caller: flow/probe_site.py [PROBE]
 │   │   ├── read_session_state.py       [WAF]       # read our own stored cookies, unchanged
 │   │   ├── read_stored_jobs.py
-│   │   ├── read_stored_cv.py
 │   │   ├── read_stored_job_signals.py  [SIGNALS]
+│   │   ├── read_stored_candidate_fit_evaluations.py [FIT]
 │   │   ├── read_pending_fetches.py     [WAF]
 │   │   ├── fetch_page_raw.py            [PROBE]    # plain HTTP GET (httpx); "another system's answer"
 │   │   └── fetch_page_rendered.py       [PROBE]    # same URL via a real headless browser (playwright)
 │   │
 │   ├── effect/
 │   │   ├── save_job_posting.py                     # convergent upsert
-│   │   ├── save_cv.py                              # convergent upsert
-│   │   ├── save_match_score.py                     # convergent upsert
+│   │   ├── save_candidate_fit_evaluation.py [FIT]  # convergent upsert, keyed by job_url
 │   │   ├── consume_rate_limit_token.py [WAF]        # ATOMIC check-and-decrement (Atomicity rule)
 │   │   ├── rotate_header_selection.py  [WAF]        # ATOMIC get-next-and-advance own index
 │   │   ├── update_session_state.py     [WAF]        # store newly-received cookies
@@ -113,10 +119,9 @@ cv-scrape/
 │   │   ├── pipelines.py                            # Scrapy item pipeline: interaction → logic → effect
 │   │   ├── middlewares.py              [WAF]        # Scrapy downloader middleware, thin sequence over WAF stubs
 │   │   ├── retry_pending_fetches.py    [WAF]        # future: drain queue, route on decide_retry_action's tag
-│   │   ├── ingest_cv.py                             # CLI flow: file path → interaction → effect
-│   │   ├── match_jobs_to_cv.py                      # CLI flow: observation×2 → logic → effect
 │   │   ├── probe_site.py                [PROBE]     # CLI flow: `cv_scrape probe <url>` — see below
-│   │   └── extract_job_signals.py       [SIGNALS]   # CLI flow: `cv_scrape extract-signals` — see below
+│   │   ├── extract_job_signals.py       [SIGNALS]   # CLI flow: `cv_scrape extract-signals` — see below
+│   │   └── evaluate_candidate_fit.py    [FIT]       # CLI flow: `cv_scrape evaluate` — see below
 │   │
 │   └── spiders/
 │       └── example_listing_spider.py                # placeholder site; thin — no decisions/mutations in the callback
@@ -130,16 +135,17 @@ cv-scrape/
 
 ## Rationale (why each category)
 
-- **state/** grouped by what each thing *is*. Domain nouns (`job_posting`, `cv`,
-  `match_score`) sit alongside the reified WAF values (`pending_fetch`, `rate_limiter`,
-  `header_rotation`, `session`, `response_envelope`) — each is "a value first," per the
-  spec's reify rule, giving the logic/effect that act on them an obvious home.
-  `site_policy.py` is static per-domain config, consumed but not decided by logic.
-  `store.py` is the DB shape — infrastructure-as-state, imported by both effect (writes)
-  and observation (reads).
+- **state/** grouped by what each thing *is*. Domain nouns (`job_posting`,
+  `candidate_profile`, `capability_overlap`, `candidate_fit_evaluation`) sit alongside
+  the reified WAF values (`pending_fetch`, `rate_limiter`, `header_rotation`,
+  `session`, `response_envelope`) — each is "a value first," per the spec's reify
+  rule, giving the logic/effect that act on them an obvious home. `site_policy.py` is
+  static per-domain config, consumed but not decided by logic. `store.py` is the DB
+  shape — infrastructure-as-state, imported by both effect (writes) and observation
+  (reads).
 - **interaction/** — the three genuinely uncontrolled-input boundaries: external site
-  bytes, external site HTML shape, and the user's own CV file. Each validates/rejects
-  before anything downstream may trust the value.
+  bytes, external site HTML shape, and the user's own `candidate.yaml` file. Each
+  validates/rejects before anything downstream may trust the value.
 - **logic/** — pure decisions over values already in hand: scoring, classifying an
   already-fetched envelope, deciding what a pending retry becomes, picking (not
   advancing) a domain's policy/header pool.
@@ -191,7 +197,7 @@ documented public API, proposing selectors from the saved markup).
 |---|---|---|
 | Fetching (raw + rendered) | `observation/fetch_page_raw.py`, `observation/fetch_page_rendered.py` | downloading is observation (Ambiguous Call #1) — but unlike the crawl path, Scrapy's engine isn't doing the download here, so the probe needs its own explicit fetch pieces. Raw (httpx) and rendered (playwright) are two different "other systems" to ask, not one function with a caller-selecting flag. |
 | Normalizing + classifying | `interaction/receive_fetch_response.py`, `logic/classify_response.py` | same pieces the WAF path will use later — reused, not duplicated, per the one rule's second consequence. Every fetched body in `flow/probe_site.py`, robots.txt included, crosses `receive_fetch_response` before any logic sees it — no fetch gets a separate, unguarded decode path. |
-| WAF vendor / framework / structured data | `logic/detect_waf_vendor.py`, `logic/detect_framework_signals.py`, `logic/discover_structured_data.py` | pure decisions over an envelope already in hand; results land in `state/*_signals.py` / `state/*_findings.py`, mirroring how `logic/score_match.py` returns `state/match_score.py` |
+| WAF vendor / framework / structured data | `logic/detect_waf_vendor.py`, `logic/detect_framework_signals.py`, `logic/discover_structured_data.py` | pure decisions over an envelope already in hand; results land in `state/*_signals.py` / `state/*_findings.py`, mirroring how `logic/evaluate_candidate_against_job.py` returns `state/candidate_fit_evaluation.py` |
 | robots.txt posture | `logic/evaluate_robots_txt.py` → `state/robots_evaluation.py` | pure decision over already-decoded text; the fetch is another `fetch_page_raw` call and the bytes still cross `receive_fetch_response` first, same as any other fetched body — not a separate piece, not a separate guard |
 | JS-requirement | `logic/compare_raw_vs_rendered.py` | pure diff over the raw body and rendered body already in hand |
 | Sample expansion | `logic/extract_same_domain_links.py` | pure decision over an already-fetched body, keeps the "small multi-page sample" bounded and same-domain |
@@ -230,7 +236,7 @@ pieces:
 | Company type | `logic/classify_company_type.py` → `CompanyType` | company-name/phrase heuristic (agency vs. direct employer), not a registry lookup |
 | Technologies / cloud platforms | `logic/extract_technologies_mentioned.py`, `logic/extract_cloud_platforms_mentioned.py` | kept separate per the one rule — "all tech" and "which cloud" are different questions over the same text, unifying them would need a caller-selecting flag |
 | Salary | `logic/extract_salary_mentioned.py` | best-effort raw substring, not structured parsing — most Swedish ads don't state one |
-| Persistence | `effect/save_job_signals.py` → `job_signals` SQLite table, `observation/read_stored_job_signals.py` | convergent upsert keyed by `job_url`, same shape as `save_match_score.py` |
+| Persistence | `effect/save_job_signals.py` → `job_signals` SQLite table, `observation/read_stored_job_signals.py` | convergent upsert keyed by `job_url`, same shape as `save_candidate_fit_evaluation.py` |
 | Sequencing | `flow/extract_job_signals.py` | reads every stored posting → calls the pieces above → assembles `state/job_signals.py` → saves, mirroring `flow/probe_site.py` assembling `SiteProfile` |
 
 **Known heuristic limitation, found and fixed during the first real run
@@ -251,22 +257,48 @@ vertical — it doesn't infer anything from a posting's text, it decides which o
 several stored `JobPosting`s are the same real vacancy seen twice (cross-posted
 across `arbetsformedlingen.se`/`jobbsafari.se`, or resubmitted twice on
 Platsbanken under different ad IDs — neither catchable by the store's own `url`
-primary key). Left untagged, and not yet called from any `flow/`, since its only
-intended caller — the step 4 market-distribution builder — doesn't exist yet;
-reified now per the same "value first, wire in later" sequencing
-`classify_role_family.py` followed in step 3.
+primary key). Reified per the same "value first, wire in later" sequencing
+`classify_role_family.py` followed in step 3; its first real caller is
+`flow/evaluate_candidate_fit.py`, part of the `[FIT]` vertical below.
+
+## Candidate-fit evaluation vertical `[FIT]`
+
+`Objectives.md` steps 5–7: place the candidate's own evidence-graded capability
+profile (`candidate.yaml`, read fresh from disk each run — gitignored, never
+persisted, changes as the user's self-assessment evolves) against each curated
+posting's `JobSignals`, and produce one of four recommendations
+(`APPLY`/`APPLY_STRETCH`/`LOW_PRIORITY`/`SKIP`). Formalizes the mechanical rule
+`candidate.yaml`'s own `job_evaluation_guidance` section already describes in
+prose — hand-run twice as one-off scratch analyses (`Candidate Placement
+Findings.md`) before being built here. Triggered by `cv_scrape evaluate`.
+
+| Concern | Files | Why there |
+|---|---|---|
+| Reading candidate.yaml | `interaction/parse_candidate_profile.py` → `state/candidate_profile.py` | same uncontrolled-file-boundary category as the CV-parsing boundary this replaces; only `capability_model.capabilities` is extracted — nothing else in the file (target constraints, salary floor, work authorization, self-assessed gaps) is read by code |
+| Technology name → capability name | `logic/map_technology_to_capability_name.py` | a static fact about the two vocabularies (job-posting keywords vs. candidate.yaml capability names), independent of the candidate's actual evidence levels, so it's its own piece rather than folded into the strength check below |
+| Capability strength | `logic/classify_candidate_capability_strength.py` → `CapabilityStrengthTag` (`STRONG`/`PARTIAL`/`ZERO`) | thresholds validated by hand across both prior scratch passes (level ≥3 → strong, evidence_class `[]` or level ≤1 → zero) |
+| Seniority fit | `logic/classify_candidate_seniority_fit.py` → `SeniorityFit` | a different, coarser bar than `classify_seniority.py`'s `SeniorityTag` (tuned for market-wide tiering, not personal disqualification) — and unlike it, tells apart an explicit Senior/Lead/Principal *title* (flat skip signal per candidate.yaml) from a stated *years* bar (candidate.yaml explicitly says not to auto-reject on years alone) |
+| Overlap summary | `logic/summarize_capability_overlap.py` → `CapabilityOverlap` | reduces a posting's technologies + cloud platforms into strong/blocker/partial capability names; dedups by resolved capability name (fixes the postgres/postgresql double-count `Candidate Placement Findings.md` flagged) and only counts a zero-evidence technology as a blocker at `REQUIRED`/`PREFERRED` strength, not bare `MENTIONED` |
+| Final recommendation | `logic/evaluate_candidate_against_job.py` → `Recommendation`, assembled into `state/candidate_fit_evaluation.py` | combines the overlap counts with `SeniorityFit`: a senior title hard-skips, a high years bar demotes the base result by one tier instead of blocking it outright — the confirmed fix for a hard `years≥5` cutoff both prior scratch passes used, which contradicted candidate.yaml's own written guidance |
+| Persistence | `effect/save_candidate_fit_evaluation.py` → `candidate_fit_evaluation` SQLite table, `observation/read_stored_candidate_fit_evaluations.py` | convergent upsert keyed by `job_url`, same shape as `save_job_signals.py` |
+| Sequencing | `flow/evaluate_candidate_fit.py` | scopes to `role_family != "UNMATCHED"`, deduplicated via `logic/deduplicate_job_postings.py` (its first real flow caller) → calls the pieces above → saves, mirroring `flow/extract_job_signals.py` |
+
+This replaced a pre-`candidate.yaml` generic CV-ingestion/single-scalar-match
+vertical (`ParsedCv`, `logic/score_match.py`, `MatchScore`) that never ran past
+`NotImplementedError` stubs — deleted outright rather than left alongside the real
+thing, per this repo's own no-dead-code convention.
 
 ## Where the core features live
 
-- **CV parsing**: `interaction/parse_cv_document.py` → `state/cv.py` →
-  `effect/save_cv.py`, sequenced by `flow/ingest_cv.py`.
 - **Job-posting parsing**: `interaction/receive_fetch_response.py` →
   `logic/classify_response.py` → `interaction/parse_job_posting_html.py` →
   `state/job_posting.py` → `effect/save_job_posting.py`, sequenced by
   `spiders/example_listing_spider.py` + `flow/pipelines.py`.
-- **Matching/scoring**: `logic/score_match.py` (pure), fed by
-  `observation/read_stored_jobs.py` + `observation/read_stored_cv.py`, saved by
-  `effect/save_match_score.py`, sequenced by `flow/match_jobs_to_cv.py`.
+- **Candidate-fit evaluation**: see the dedicated section above —
+  `interaction/parse_candidate_profile.py` → the `classify_*`/`summarize_*`/
+  `evaluate_*` `[FIT]` logic → `state/candidate_fit_evaluation.py` →
+  `effect/save_candidate_fit_evaluation.py`, sequenced by
+  `flow/evaluate_candidate_fit.py`.
 - **Persistence**: SQLite via `state/store.py` + `effect/save_*.py` writers +
   `observation/read_stored_*.py` readers — chosen over JSON Lines for queryability
   (matching needs jobs × scores joins) while staying dependency-light (stdlib
