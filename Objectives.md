@@ -449,3 +449,26 @@ once and the real shape of the data is known, not before.
   `candidate.yaml` capability and stay unmapped by design, same as the pre-existing
   Scala/Kafka/Snowflake precedent — they populate `job_signals` for visibility, not
   fit evaluation.
+- jobbsafari.se category coverage: checked (2026-08-21), per this document's own
+  "open item" note that the spider's `yrke/utvecklare` scope was never checked
+  against how well it maps onto the seven role families. Fetched jobbsafari's own
+  `kategori/data-och-it` (Data & IT) listing live and cross-checked its titles
+  against the then-332 stored `jobbsafari.se` rows: real, relevant postings ("Data
+  Engineer till SPP," "Platform Engineer inom Kubernetes," a Sakerhetspolisen
+  "DevOps Engineer") were present there and absent from `utvecklare` entirely — a
+  real coverage gap, not just under-sampling. Added `kategori/data-och-it` as a
+  second `start_url` on `JobbsafariListingSpider`, same "loose recall, filtered
+  downstream by `classify_role_family.py`" treatment Platsbanken's `q` already gets
+  — no new logic needed. Re-ran the spider: `jobbsafari.se` rows grew from 332 to
+  2,343; total stored `job_posting` rows from 1,320 to 3,331. Re-ran
+  `extract-signals`/`evaluate`: the curated, deduped sample grew from 71 to **125**
+  postings (pre-dedup role-family counts: `DATA_ENGINEER` 131, `ANALYTICS_ENGINEER`
+  21, `ETL_INTEGRATION` 13, `DATA_PLATFORM` 9, `DATA_HEAVY_BACKEND` 6), and
+  recommendation counts moved to 20 APPLY / 49 APPLY_STRETCH / 24 LOW_PRIORITY / 32
+  SKIP — proportionally similar to the old 71-posting split (55% vs. 52%
+  APPLY+STRETCH), but on a meaningfully larger, more statistically credible sample.
+  **Not yet done:** steps 4–7's market-tier distribution and `Candidate Placement
+  Findings.md`/`Market Benchmark Findings.md` were built by hand against the old
+  71-posting sample and have not been re-derived against the new 125 — those stay
+  manual/conversational per this document's own step 4–7 sequencing note, so
+  re-running them is a deliberate follow-up, not implied by this collection change.

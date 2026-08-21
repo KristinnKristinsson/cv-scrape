@@ -368,7 +368,14 @@ thing, per this repo's own no-dead-code convention.
   as real markup, since Cloudflare fronts this site even though it wasn't seen actively
   challenging during probing. No `SitePolicy` is used — see the two interaction
   pieces' docstrings for why a CSS-selector-shaped config doesn't fit a site whose real
-  extraction mechanism is JSON-LD key access.
+  extraction mechanism is JSON-LD key access. `start_urls` walks two Stockholm
+  listings independently — the original `yrke/utvecklare` (role-title) filter plus
+  `kategori/data-och-it` (the site's own broader category), added per `Objectives.md`'s
+  jobbsafari-taxonomy-coverage check, which found real postings (e.g. "Data Engineer
+  till SPP") that never appeared under `utvecklare` alone. Same "loose recall, filtered
+  downstream" treatment as Platsbanken's `q` — no new logic needed since
+  `logic/classify_role_family.py` and `logic/deduplicate_job_postings.py` already do
+  that filtering and cross-listing dedup.
 
 ## Ambiguous placement calls (for the record)
 
